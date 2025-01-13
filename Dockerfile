@@ -17,12 +17,19 @@ ENV SITE_DOMAIN='dbca.wa.gov.au'
 RUN apt-get clean
 RUN apt-get update
 RUN apt-get upgrade -y
-RUN apt-get install --no-install-recommends -y curl wget git libmagic-dev gcc binutils libproj-dev gdal-bin python3 python3-setuptools python3-dev python3-pip tzdata cron rsyslog gunicorn
+RUN apt-get install --no-install-recommends -y curl wget git libmagic-dev gcc binutils libproj-dev python3 python3-setuptools python3-dev python3-pip tzdata cron rsyslog gunicorn
 RUN apt-get install --no-install-recommends -y libpq-dev patch libreoffice
 RUN apt-get install --no-install-recommends -y postgresql-client mtr htop vim  sudo
 RUN apt-get install --no-install-recommends -y bzip2 pdftk
-RUN apt-get install --no-install-recommends -y libgdal-dev build-essential
+RUN apt-get install --no-install-recommends -y build-essential
+RUN apt-get install --no-install-recommends -y software-properties-common 
 RUN ln -s /usr/bin/python3 /usr/bin/python
+
+# Install GDAL
+RUN add-apt-repository ppa:ubuntugis/ubuntugis-unstable
+RUN apt update
+RUN apt-get install --no-install-recommends -y gdal-bin python3-gdal
+RUN apt-get install --no-install-recommends -y libgdal-dev build-essential
 
 # Install nodejs
 RUN update-ca-certificates
