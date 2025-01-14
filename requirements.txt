@@ -1,4 +1,4 @@
-Django==4.2.8
+Django==4.2.18
 dbca-utils==2.0.2
 gunicorn==21.2.0
 gevent==23.9.1
