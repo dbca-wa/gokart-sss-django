@@ -248,8 +248,10 @@ SUPPORTED_CRS = {
     "Albers_Equal_Conic_Area_GDA_Western_Australia": "aea", #no EPSG code for this projection
     "Albers Equal Area Conic Western Australia GDA2020": "aea", #no EPSG code for this projection
     "GDA2020": "EPSG:7844",
+    "GCS_GDA2020": "EPSG:7844",   # ESRI legacy .prj naming convention
     "GDA2020_3D": "EPSG:7844",
     "GDA94": "EPSG:4283",
+    "GCS_GDA_1994": "EPSG:4283",  # ESRI legacy .prj naming convention
     "GDA94 / MGA zone 49": "EPSG:28349",
     "GDA94 / MGA zone 50": "EPSG:28350",
     "GDA94 / MGA zone 51": "EPSG:28351",
