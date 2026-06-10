@@ -323,7 +323,9 @@ def cataloguev2(request):
             catalogue_row['service_type'] = c.service_type
             catalogue_row['service_type_version'] = c.service_type_version
             if c.legend:
-                catalogue_row['legend'] = c.legend.url
+                catalogue_row['legend'] = c.legend
+            elif hasattr(c, 'legend_file') and c.legend_file:
+                catalogue_row['legend'] = c.legend_file.url
             else:
                 catalogue_row['legend'] = None
             catalogue_row['active'] = c.active
