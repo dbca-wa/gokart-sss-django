@@ -1298,7 +1298,10 @@
           if (options.mapLayer) return options.mapLayer
           var vm = this
           var url = this.env.kmiService + "/wfs"
-          if (options.id.startsWith("kaartdijin-boodja-private")){
+          if ((this.env.envType.toLowerCase() === "uat" || this.env.envType.toLowerCase() === "dev") && options.id.includes("bushfirelist_latest")){
+            url = this.env.bfrsService + "/api/bushfirelist_latest/"
+          }
+          else if (options.id.startsWith("kaartdijin-boodja-private")){
             url = this.env.kbService + "/wfs"
           }
           var withCredentialsSetting = true

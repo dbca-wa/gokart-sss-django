@@ -577,17 +577,14 @@ Utils.prototype.getDateRange = function(range, format) {
         }
         endDate = null
     } else if (dateRange === 70001) {
-        //current financial year
-        var startDate = moment(moment().format("YYYY-MM-DD"),"YYYY-MM-DD")
-        if (startDate.month() >= 6) {
-            startDate.month(6)
-            startDate.date(1)
+        var now = moment()
+        var startDate
+        if (now.month() >= 6) {
+            startDate = moment(`${now.year()}-07-01`)
         } else {
-            startDate.year(startDate.year() - 1)
-            startDate.month(6)
-            startDate.date(1)
+            startDate = moment(`${now.year() - 1}-07-01`)
         }
-        endDate = null
+        var endDate = moment(startDate).add(1, "year").subtract(1, "day").endOf('day')
     }  else {
         throw "Date range (" + dateRange + ") Not Support"
     }

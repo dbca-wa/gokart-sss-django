@@ -131,10 +131,10 @@
                 <div class="row collapse">
                   <div class="small-4">
                     <select name="select" v-model="dateRange" style="font-size:15px;">
-                      <option value="" selected>Date range</option>
+                      <option value="">Date range</option>
                       <option value="21024">Last 24 hours </option>
                       <option value="31007">Last 7 days </option>
-                      <option value="70001">Current Financial Year </option>
+                      <option value="70001" selected>Current Financial Year </option>
                       <option value="-1">User Defined</option>
                     </select>
                   </div>
@@ -664,7 +664,7 @@
         if (!this._endDatePicker) return
         try {
             if (this.startDate === "") {
-                this._endDatePicker.setStartDate(moment().subtract(13,"months").format("YYYY-MM-DD") + " 00:00")
+                this._endDatePicker.setStartDate(moment().format("YYYY-MM-DD") + " 00:00")
             } else {
                 this._endDatePicker.setStartDate(moment(this.startDate,"YYYY-MM-DD HH:mm").format("YYYY-MM-DD") + " 00:00")
             }
@@ -687,37 +687,61 @@
         }
       },
       dateFilter: function() {
+
+        if (this.dateRange === "70001") {
+            var now = moment.utc()
+
+            var fyYear = (now.month() >= 6) ? now.year() : now.year() - 1
+            var fyStart = moment.utc(`${fyYear}-07-01T00:00:00Z`)
+
+            return "fire_detected_or_created >= '" + fyStart.format("YYYY-MM-DDTHH:mm:ssZ") + "'"
+        }
+
         if (this.dateRange !== "-1") {
             //in predefined range, reset the startDate and endDate
             this.changeDateRange()
         }
 
-        var startDate = (this.startDate)?moment(this.startDate,"YYYY-MM-DD HH:mm",true):null
+        var startDate = (this.startDate) ? moment(this.startDate,"YYYY-MM-DD HH:mm",true) : null
         if (startDate && !startDate.isValid()) {
             throw "startDate is under changing."
         }
 
-        var endDate = (this.endDate && this.endDate < moment().format("YYYY-MM-DD HH:mm"))?moment(this.endDate,"YYYY-MM-DD HH:mm",true):null
+        var endDate = (this.endDate && this.endDate < moment().format("YYYY-MM-DD HH:mm"))
+            ? moment(this.endDate,"YYYY-MM-DD HH:mm",true)
+            : null
+
         if (endDate && !endDate.isValid()) {
             throw "endDate is under changing."
         }
-
 
         if (startDate) {
             if (endDate) {
                 if (startDate >= endDate) {
                     throw "Start date must be less than end date."
                 }
-                return "fire_detected_or_created BETWEEN '" + startDate.utc().format("YYYY-MM-DDTHH:mm:ssZ") + "' AND '" + utils.nextDate(endDate,"YYYY-MM-DD HH:mm").utc().format("YYYY-MM-DDTHH:mm:ssZ") + "'"
+                return "fire_detected_or_created BETWEEN '" 
+                    + startDate.utc().format("YYYY-MM-DDTHH:mm:ssZ") 
+                    + "' AND '" 
+                    + utils.nextDate(endDate,"YYYY-MM-DD HH:mm").utc().format("YYYY-MM-DDTHH:mm:ssZ") 
+                    + "'"
             } else {
-                return "fire_detected_or_created >= '" + startDate.utc().format("YYYY-MM-DDTHH:mm:ssZ") + "'"
+                return "fire_detected_or_created >= '" 
+                    + startDate.utc().format("YYYY-MM-DDTHH:mm:ssZ") 
+                    + "'"
             }
         } else if (endDate) {
-            return "fire_detected_or_created < '" + utils.nextDate(endDate,"YYYY-MM-DD HH:mm").utc().format("YYYY-MM-DDTHH:mm:ssZ") + "'"
-        } else {
-            return null
+            return "fire_detected_or_created < '" 
+                + utils.nextDate(endDate,"YYYY-MM-DD HH:mm").utc().format("YYYY-MM-DDTHH:mm:ssZ") 
+                + "'"
         }
-      },
+
+        var now = moment.utc()
+        var fyYear = (now.month() >= 6) ? now.year() : now.year() - 1
+        var fyStart = moment.utc(`${fyYear}-07-01T00:00:00Z`)
+
+        return "fire_detected_or_created >= '" + fyStart.format("YYYY-MM-DDTHH:mm:ssZ") + "'"
+    },
       districtFilter: function(downloadFilter) {
         if (downloadFilter) {
             var vm = this
@@ -4122,8 +4146,8 @@
 		disableDblClickSelection: true,
 		leftArrow:'<<',
 		rightArrow:'>>',
-        startDate:moment().subtract(13,"months").format("YYYY-MM-DD") + " 00:00",
-        endDate:moment().format("YYYY-MM-DD") + " 23:59",
+        startDate:null,
+        endDate:null,
         pickTime:true,
         minuteStep:1
       });
@@ -4138,8 +4162,8 @@
 		disableDblClickSelection: true,
 		leftArrow:'<<',
 		rightArrow:'>>',
-        startDate:moment().subtract(13,"months").format("YYYY-MM-DD") + " 00:00",
-        endDate:moment().format("YYYY-MM-DD") + " 23:59",
+        startDate:null,
+        endDate:null,
         pickTime:true,
         minuteStep:1
       });
