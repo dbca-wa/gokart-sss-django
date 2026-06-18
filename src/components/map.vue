@@ -1298,9 +1298,9 @@
           if (options.mapLayer) return options.mapLayer
           var vm = this
           var url = this.env.kmiService + "/wfs"
-          if ((this.env.envType.toLowerCase() === "uat" || this.env.envType.toLowerCase() === "dev") && options.id.includes("bushfirelist_latest")){
-            url = this.env.bfrsService + "/api/bushfirelist_latest/"
-          }
+          if (this.env.bfrsProxyUrl && (this.env.envType.toLowerCase() === "uat" || this.env.envType.toLowerCase() === "dev") && options.id.includes("bushfirelist_latest")){
+              url = "/api/bfrs-proxy/"
+            }
           else if (options.id.startsWith("kaartdijin-boodja-private")){
             url = this.env.kbService + "/wfs"
           }
