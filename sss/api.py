@@ -7,6 +7,7 @@ from django.template.loader import render_to_string
 from django.shortcuts import render 
 from django.db.models import Q, Max
 from django.contrib.auth.models import User
+from requests.auth import HTTPBasicAuth
 from sss import raster
 from sss import sss_gdal
 from sss import spatial as sss_spatial
@@ -905,3 +906,39 @@ def command_status(request, *args, **kwargs):
     }
     
     return JsonResponse(response_data)
+
+@csrf_exempt
+def api_bfrs_proxy(request, *args, **kwargs):
+    if not request.user.is_authenticated:
+        raise ValidationError('User is not authenticated')
+
+    base_url = getattr(settings, "BFRS_PROXY_URL", None)
+    if not base_url:
+        return JsonResponse({"error": "BFRS_PROXY_URL not configured"}, status=500)
+
+    remoteurl = base_url + "/api/bushfirelist_latest/"
+    query_string = request.META.get("QUERY_STRING", "")
+
+    target_url = remoteurl
+    if query_string:
+        target_url = f"{remoteurl}?{query_string}"
+
+    auth_request = HTTPBasicAuth(
+        settings.AUTH2_BASIC_AUTH_USER,
+        settings.AUTH2_BASIC_AUTH_PASSWORD
+    )
+
+    try:
+        response = requests.get(
+            target_url,
+            auth=auth_request
+        )
+
+        return HttpResponse(
+            response.content,
+            content_type=response.headers.get("Content-Type", "application/json"),
+            status=response.status_code
+        )
+
+    except requests.RequestException as e:
+        return JsonResponse({"error": str(e)}, status=502)

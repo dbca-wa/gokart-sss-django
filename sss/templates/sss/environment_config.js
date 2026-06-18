@@ -2,6 +2,7 @@ var env = {
     // authUrl:'/sso/profile',
     authUrl: "{{ settings.ACCOUNT_DETAILS_URL }}",
     appType: (window.location.protocol == "file:")?"cordova":"webapp",
+    bfrsProxyUrl: "{{ settings.BFRS_PROXY_URL }}",
     envType: "{{ settings.ENV_TYPE }}",
     // cswService:"https://csw-uat.dbca.wa.gov.au/catalogue/api2/application/records",
     cswService: "{{ settings.CSW_SERVICE_URL }}",
