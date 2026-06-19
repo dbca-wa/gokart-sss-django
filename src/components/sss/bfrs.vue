@@ -2478,7 +2478,7 @@
                     fire_boundary = null;
                 }
             }
-            if (fire_boundary.coordinates) {
+            if (fire_boundary && fire_boundary.coordinates) {
                 if (!this.isFireboundaryDrawable(feature)) {
                     
                     var fbCoords = fire_boundary.coordinates;
