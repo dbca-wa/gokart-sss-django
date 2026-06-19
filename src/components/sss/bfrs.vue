@@ -2469,11 +2469,25 @@
         feature.set('status', this._reportStatus[feature.get('report_status') || 99999], true)
 
         var geometries = feature.getGeometry()?[feature.getGeometry()]:[]
-        if (feature.get("fire_boundary")) {
-            var fire_boundary = JSON.parse(feature.get("fire_boundary"))
-            if (fire_boundary.coordinates) {
+        if (feature.get("fire_boundary")) { 
+            var fire_boundary = feature.get("fire_boundary");          
+            if (typeof fire_boundary === "string") {
+                try {
+                    fire_boundary = JSON.parse(fire_boundary);
+                } catch (e) {
+                    fire_boundary = null;
+                }
+            }
+            if (fire_boundary && fire_boundary.coordinates) {
                 if (!this.isFireboundaryDrawable(feature)) {
-                    feature.set("fire_boundary", new ol.geom.Polygon(fire_boundary.coordinates).getExtent(), true)
+                    
+                    var fbCoords = fire_boundary.coordinates;
+
+                    var geom = fire_boundary.type === 'MultiPolygon'
+                        ? new ol.geom.MultiPolygon(fbCoords)
+                        : new ol.geom.MultiPolygon([fbCoords]);
+
+                    feature.set("fire_boundary", geom.getExtent(), true);
                 } else {
                     var fbCoords = fire_boundary.coordinates
                     geometries.push(
@@ -4067,6 +4081,8 @@
 
         // enable resource bfrs layer, if disabled
         if (!this.bushfireMapLayer) {
+          // avoid an initial unfiltered WFS load; query only after the BFRS filter is applied
+          this.bushfireLayer.initialLoad = false
           this.catalogue.onLayerChange(this.bushfireLayer, true)
         } else if (this.active.isHidden(this.bushfireMapLayer)) {
             this.active.toggleHidden(this.bushfireMapLayer)
