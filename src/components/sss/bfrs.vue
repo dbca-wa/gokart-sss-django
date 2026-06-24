@@ -182,8 +182,16 @@
             </div>
 
             <div id="bfrs-list" class="layers-flexibleframe scroller" style="margin-left:-15px; margin-right:-15px;">
+                            <div v-if="isFeatureListLoading" class="row">
+                                <div class="small-12 columns" style="padding:12px 18px;">
+                                    <div class="callout secondary" style="margin-bottom:8px;">
+                                        <i class="fa fa-circle-o-notch fa-spin" aria-hidden="true"></i>
+                                        Loading bushfires...
+                                    </div>
+                                </div>
+                            </div>
               <template v-for="f in featurelist" track-by="get('id')">
-              <div v-if="showFeature(f)" class="row feature-row" v-bind:class="{'feature-selected': isFeatureSelected(f) }" @click="toggleSelect(f)">
+                            <div v-if="!isFeatureListLoading && showFeature(f)" class="row feature-row" v-bind:class="{'feature-selected': isFeatureSelected(f) }" @click="toggleSelect(f)">
                 <div class="small-12 columns">
                     <a v-if="canReset(f)"  @click.stop.prevent="resetFeature(f)" title="Reset" class="button tiny secondary float-right acion" style="margin-left:2px"><i class="fa fa-undo actionicon"></i></a>
                   <a v-if="canDelete(f)" @click.stop.prevent="deleteFeature(f)" title="Delete" class="button tiny secondary float-right action" style="margin-left:2px"><i class="fa fa-trash actionicon"></i></a>
@@ -390,6 +398,7 @@
         fields: ['fire_number', 'name'],
         calculation_result: null,
         progressRequestCount: 0,
+        isFeatureListLoading: true,
         //sorted fields list (column,true?ascend:descend)
         sortedFields: [['fire_detected_or_created', false]],
         drawings: new ol.Collection(),
@@ -3581,6 +3590,7 @@
         this.updateCQLFilter(0)
       },      
 	  refreshBushfires: function() {
+        this.isFeatureListLoading = true
         this.bushfireMapLayer.getSource().loadSource("query")
         this.refreshFinalFireboundaryLayer()
         if (this.selectedFeatures.getLength() > 0) {
@@ -3628,8 +3638,10 @@
                         vm._download_cql_filter = cql_filter
                     }
                     //clear bushfire filter or change other filter
+                    vm.isFeatureListLoading = true
                     vm.bushfireMapLayer.getSource().loadSource("query", callback)
                 } catch(ex) {
+                    vm.isFeatureListLoading = false
                     //ignore the exception
                     //alert(ex)
                 }
@@ -3849,6 +3861,7 @@
                 vm._bfrsStatus.phaseEnd("load_profile")
             },
             error: function (xhr,status,message) {
+                vm.isFeatureListLoading = false
                 alert(xhr.status + " : " + (xhr.responseText || message))
                 vm._bfrsStatus.phaseFailed("load_profile","Failed to loading user profile data. status = " + xhr.status + " , message = " + (xhr.responseText || message))
             },
@@ -3935,6 +3948,7 @@
                 vm._bfrsStatus.phaseEnd("load_regions")
             },
             error: function (xhr,status,message) {
+                vm.isFeatureListLoading = false
                 alert(xhr.status + " : " + (xhr.responseText || message))
                 vm._bfrsStatus.phaseFailed("load_regions","Failed to loading regions data. status = " + xhr.status + " , message = " + (xhr.responseText || message))
             },
@@ -4713,6 +4727,7 @@
         },
         */
         onerror: function(status, message) {
+            vm.isFeatureListLoading = false
             vm._bfrsStatus.phaseFailed("load_bushfires", status + " : " + message)
         },
         onload: function(loadType, vectorSource, features, defaultOnload) {
@@ -4825,6 +4840,7 @@
                     delete vm.whoami['bushfire']["permission"]["changed"]
                     vm.revision += 1
                 }
+                vm.isFeatureListLoading = false
                 vm._bfrsStatus.phaseEnd("load_bushfires")
             }
             vm._checkPermission(features, processResources)
@@ -4880,6 +4896,7 @@
             if (ev.mapLayer.get('id') === vm.env.bushfireListLayer) {
                 vm.features.clear()
                 vm._featurelist.clear()
+                vm.isFeatureListLoading = false
             }
         })
 
