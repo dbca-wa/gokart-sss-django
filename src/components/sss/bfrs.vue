@@ -3583,9 +3583,8 @@
 	  resetFilters: function() {
         this.region = ""
         this.district = ""
-        this.dateRange = ""
-        this.startDate = ""
-        this.endDate = ""
+        this.dateRange = "70001"
+        this.changeDateRange()
         this.statusFilter = "all_reports"
         this.updateCQLFilter(0)
       },      
