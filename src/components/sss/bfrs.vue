@@ -1390,9 +1390,29 @@
                     spatialData["area"] = null
                 }
 
+                // Area breakdown should still run when only origin point was modified,
+                // as long as the feature already has a fire boundary geometry.
+                if (!fireboundary) {
+                    var existingFireboundary = geometries.find(function(g) {return g instanceof ol.geom.MultiPolygon}) || null
+                    fireboundary = (existingFireboundary && existingFireboundary.getPolygons().length > 0)
+                        ? existingFireboundary.getCoordinates()
+                        : null
+                }
+
                 var tenure_area_task = null
                 var tasks = vm.featureTasks(vm.target_feature);
-                if (fireboundary && (modifyType & 2) === 2 && caller !== 'showprogress') {
+                /*
+                 * if grey bushfires not required to have area breakdown use this code.:
+                 * if (fireboundary && (modifyType & 2) === 2 && caller !== 'showprogress') {
+                 *     spatialData["area"] = null
+                 *     var tenure_area_task = tasks.find(task => task.taskId === 'tenure_area');
+                 *     if (!tenure_area_task){
+                 *         var tenure_area_task = vm._taskManager.addTask(feat,"getSpatialData","tenure_area","Calculate fire boundary areas",utils.WAITING)
+                 *     }
+                 * }
+                 */
+                if (fireboundary && caller !== 'showprogress') {
+                    spatialData["area"] = null
                     var tenure_area_task = tasks.find(task => task.taskId === 'tenure_area');
                     if (!tenure_area_task){
                         var tenure_area_task = vm._taskManager.addTask(feat,"getSpatialData","tenure_area","Calculate fire boundary areas",utils.WAITING)
@@ -1728,59 +1748,63 @@
                         }
 
                     }
-                    var layers =  null
-                    if (["new","initial"].indexOf(feat.get('status')) >= 0 )  {
-                        layers =  null
-                    } else {
-                        layers = [
-                            {
-                                id:"legislated_lands_and_waters",
-                                layerid:getLayerId("cddp:legislated_lands_and_waters"),
-                                cqlfilter:"category<>'State Forest'",
-                                kmiservice:vm.env.kmiService,
-                                properties:{
-                                    category:"category"
-                                },
-                                primary_key:"ogc_fid"
+                    /*
+                     * if grey bushfires not required to have area breakdown use this code.
+                     * var layers = null
+                     * if (["new","initial"].indexOf(feat.get('status')) >= 0 ) {
+                     *     layers = null
+                     * } else {
+                     *     layers = [ ... ]
+                     * }
+                     */
+                    var layers = [
+                        {
+                            id:"legislated_lands_and_waters",
+                            layerid:getLayerId("cddp:legislated_lands_and_waters"),
+                            cqlfilter:"category<>'State Forest'",
+                            kmiservice:vm.env.kmiService,
+                            properties:{
+                                category:"category"
                             },
-                            {
-                                id:"state_forest_plantation_distribution",
-                                layerid:getLayerId("cddp:state_forest_plantation_distribution"),
-                                kmiservice:vm.env.kmiService,
-                                properties:{
-                                    category:"fbr_fire_r"
-                                },
-                                primary_key:"ogc_fid"
+                            primary_key:"ogc_fid"
+                        },
+                        {
+                            id:"state_forest_plantation_distribution",
+                            layerid:getLayerId("cddp:state_forest_plantation_distribution"),
+                            kmiservice:vm.env.kmiService,
+                            properties:{
+                                category:"fbr_fire_r"
                             },
-                            {
-                                id:"dept_interest_lands_and_waters",
-                                layerid:getLayerId("cddp:dept_interest_lands_and_waters"),
-                                kmiservice:vm.env.kmiService,
-                                properties:{
-                                    category:"category"
-                                },
-                                primary_key:"ogc_fid"
+                            primary_key:"ogc_fid"
+                        },
+                        {
+                            id:"dept_interest_lands_and_waters",
+                            layerid:getLayerId("cddp:dept_interest_lands_and_waters"),
+                            kmiservice:vm.env.kmiService,
+                            properties:{
+                                category:"category"
                             },
-                            {
-                                id:"other_tenures",
-                                layerid:getLayerId("cddp:other_tenures"),
-                                kmiservice:vm.env.kmiService,
-                                properties:{
-                                    category:"brc_fms_le"
-                                },
-                                primary_key:"ogc_fid"
+                            primary_key:"ogc_fid"
+                        },
+                        {
+                            id:"other_tenures",
+                            layerid:getLayerId("cddp:other_tenures"),
+                            kmiservice:vm.env.kmiService,
+                            properties:{
+                                category:"brc_fms_le"
                             },
-                            {
-                                id:"sa_nt_burntarea",
-                                layerid:getLayerId("cddp:sa_nt_state_polygons_burntarea"),
-                                kmiservice:vm.env.kmiService,
-                                properties:{
-                                    category:"name"
-                                },
-                                primary_key:"ogc_fid"
-                            }
-                        ]
-                    }
+                            primary_key:"ogc_fid"
+                        },
+                        {
+                            id:"sa_nt_burntarea",
+                            layerid:getLayerId("cddp:sa_nt_state_polygons_burntarea"),
+                            kmiservice:vm.env.kmiService,
+                            properties:{
+                                category:"name"
+                            },
+                            primary_key:"ogc_fid"
+                        }
+                    ]
                     $.ajax({
                         url: "/api/bfrs_calculation_queue",
                         dataType:"json",
@@ -3580,7 +3604,7 @@
         }, true)
       },
       
-	  resetFilters: function() {
+    resetFilters: function() {
         this.region = ""
         this.district = ""
         this.dateRange = "70001"
