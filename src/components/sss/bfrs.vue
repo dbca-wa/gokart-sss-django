@@ -922,7 +922,7 @@
         }
       },
       isFireboundaryDrawable: function(bushfire) {
-        return bushfire.get('status') === "new" || (bushfire.get('report_status') === 1) || (bushfire.get('report_status') === 2)
+        return bushfire.get('status') === "new" || (bushfire.get('report_status') === 1) || (bushfire.get('report_status') === 2) || (bushfire.get('report_status') === 3)
       },
       isEditable: function(bushfire) {
         try{
