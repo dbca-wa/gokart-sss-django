@@ -38,10 +38,10 @@ class CatalogueTagInline(admin.TabularInline):
 
 @admin.register(models.Catalogue)
 class Catalogue(admin.ModelAdmin):
-    list_display = ('id', 'identifier', 'type', 'service_type', 'updated', 'created', 'active')
+    list_display = ('id', 'title', 'identifier', 'type', 'service_type', 'updated', 'created', 'active')
     list_filter = ['type', 'service_type', 'active']
     readonly_fields = ['updated', 'created',]
-    search_fields = ['identifier', 'type'] 
+    search_fields = ['identifier', 'type', 'title'] 
     inlines = [CatalogueTagInline,]  
     
 @admin.register(models.MapServer)
