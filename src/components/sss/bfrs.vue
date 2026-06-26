@@ -129,6 +129,11 @@
                 </div>
 
                 <div class="row collapse">
+                  <div class="small-12 columns">
+                    <p>Filtering uses created or fire detected date</p>
+                  </div>
+                </div>
+                <div class="row collapse">
                   <div class="small-4">
                     <select name="select" v-model="dateRange" style="font-size:15px;">
                       <option value="">Date range</option>
