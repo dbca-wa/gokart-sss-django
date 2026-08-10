@@ -111,6 +111,10 @@ RUN chmod 777 /app/tmp/
 #RUN mkdir /app/logs/.ipython
 #RUN export IPYTHONDIR=/app/logs/.ipython/
 
+USER root
+RUN apt purge -y linux-libc-dev
+USER oim
+
 EXPOSE 8080
 HEALTHCHECK --interval=1m --timeout=5s --start-period=10s --retries=3 CMD ["wget", "-q", "-O", "-", "http://localhost:8080/"]
 CMD ["/bin/bash", "-c", "/startup.sh"]
