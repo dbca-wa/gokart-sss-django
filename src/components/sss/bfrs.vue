@@ -129,12 +129,17 @@
                 </div>
 
                 <div class="row collapse">
+                  <div class="small-12 columns">
+                    <p>Filtering uses created or fire detected date</p>
+                  </div>
+                </div>
+                <div class="row collapse">
                   <div class="small-4">
                     <select name="select" v-model="dateRange" style="font-size:15px;">
-                      <option value="" selected>Date range</option>
+                      <option value="">Date range</option>
                       <option value="21024">Last 24 hours </option>
                       <option value="31007">Last 7 days </option>
-                      <option value="70001">Current Financial Year </option>
+                      <option value="70001" selected>Current Financial Year </option>
                       <option value="-1">User Defined</option>
                     </select>
                   </div>
@@ -182,8 +187,16 @@
             </div>
 
             <div id="bfrs-list" class="layers-flexibleframe scroller" style="margin-left:-15px; margin-right:-15px;">
+                            <div v-if="isFeatureListLoading" class="row">
+                                <div class="small-12 columns" style="padding:12px 18px;">
+                                    <div class="callout secondary" style="margin-bottom:8px;">
+                                        <i class="fa fa-circle-o-notch fa-spin" aria-hidden="true"></i>
+                                        Loading bushfires...
+                                    </div>
+                                </div>
+                            </div>
               <template v-for="f in featurelist" track-by="get('id')">
-              <div v-if="showFeature(f)" class="row feature-row" v-bind:class="{'feature-selected': isFeatureSelected(f) }" @click="toggleSelect(f)">
+                            <div v-if="!isFeatureListLoading && showFeature(f)" class="row feature-row" v-bind:class="{'feature-selected': isFeatureSelected(f) }" @click="toggleSelect(f)">
                 <div class="small-12 columns">
                     <a v-if="canReset(f)"  @click.stop.prevent="resetFeature(f)" title="Reset" class="button tiny secondary float-right acion" style="margin-left:2px"><i class="fa fa-undo actionicon"></i></a>
                   <a v-if="canDelete(f)" @click.stop.prevent="deleteFeature(f)" title="Delete" class="button tiny secondary float-right action" style="margin-left:2px"><i class="fa fa-trash actionicon"></i></a>
@@ -390,6 +403,7 @@
         fields: ['fire_number', 'name'],
         calculation_result: null,
         progressRequestCount: 0,
+        isFeatureListLoading: true,
         //sorted fields list (column,true?ascend:descend)
         sortedFields: [['fire_detected_or_created', false]],
         drawings: new ol.Collection(),
@@ -664,7 +678,7 @@
         if (!this._endDatePicker) return
         try {
             if (this.startDate === "") {
-                this._endDatePicker.setStartDate(moment().subtract(13,"months").format("YYYY-MM-DD") + " 00:00")
+                this._endDatePicker.setStartDate(moment().format("YYYY-MM-DD") + " 00:00")
             } else {
                 this._endDatePicker.setStartDate(moment(this.startDate,"YYYY-MM-DD HH:mm").format("YYYY-MM-DD") + " 00:00")
             }
@@ -687,37 +701,61 @@
         }
       },
       dateFilter: function() {
+
+        if (this.dateRange === "70001") {
+            var now = moment.utc()
+
+            var fyYear = (now.month() >= 6) ? now.year() : now.year() - 1
+            var fyStart = moment.utc(`${fyYear}-07-01T00:00:00Z`)
+
+            return "fire_detected_or_created >= '" + fyStart.format("YYYY-MM-DDTHH:mm:ssZ") + "'"
+        }
+
         if (this.dateRange !== "-1") {
             //in predefined range, reset the startDate and endDate
             this.changeDateRange()
         }
 
-        var startDate = (this.startDate)?moment(this.startDate,"YYYY-MM-DD HH:mm",true):null
+        var startDate = (this.startDate) ? moment(this.startDate,"YYYY-MM-DD HH:mm",true) : null
         if (startDate && !startDate.isValid()) {
             throw "startDate is under changing."
         }
 
-        var endDate = (this.endDate && this.endDate < moment().format("YYYY-MM-DD HH:mm"))?moment(this.endDate,"YYYY-MM-DD HH:mm",true):null
+        var endDate = (this.endDate && this.endDate < moment().format("YYYY-MM-DD HH:mm"))
+            ? moment(this.endDate,"YYYY-MM-DD HH:mm",true)
+            : null
+
         if (endDate && !endDate.isValid()) {
             throw "endDate is under changing."
         }
-
 
         if (startDate) {
             if (endDate) {
                 if (startDate >= endDate) {
                     throw "Start date must be less than end date."
                 }
-                return "fire_detected_or_created BETWEEN '" + startDate.utc().format("YYYY-MM-DDTHH:mm:ssZ") + "' AND '" + utils.nextDate(endDate,"YYYY-MM-DD HH:mm").utc().format("YYYY-MM-DDTHH:mm:ssZ") + "'"
+                return "fire_detected_or_created BETWEEN '" 
+                    + startDate.utc().format("YYYY-MM-DDTHH:mm:ssZ") 
+                    + "' AND '" 
+                    + utils.nextDate(endDate,"YYYY-MM-DD HH:mm").utc().format("YYYY-MM-DDTHH:mm:ssZ") 
+                    + "'"
             } else {
-                return "fire_detected_or_created >= '" + startDate.utc().format("YYYY-MM-DDTHH:mm:ssZ") + "'"
+                return "fire_detected_or_created >= '" 
+                    + startDate.utc().format("YYYY-MM-DDTHH:mm:ssZ") 
+                    + "'"
             }
         } else if (endDate) {
-            return "fire_detected_or_created < '" + utils.nextDate(endDate,"YYYY-MM-DD HH:mm").utc().format("YYYY-MM-DDTHH:mm:ssZ") + "'"
-        } else {
-            return null
+            return "fire_detected_or_created < '" 
+                + utils.nextDate(endDate,"YYYY-MM-DD HH:mm").utc().format("YYYY-MM-DDTHH:mm:ssZ") 
+                + "'"
         }
-      },
+
+        var now = moment.utc()
+        var fyYear = (now.month() >= 6) ? now.year() : now.year() - 1
+        var fyStart = moment.utc(`${fyYear}-07-01T00:00:00Z`)
+
+        return "fire_detected_or_created >= '" + fyStart.format("YYYY-MM-DDTHH:mm:ssZ") + "'"
+    },
       districtFilter: function(downloadFilter) {
         if (downloadFilter) {
             var vm = this
@@ -889,7 +927,7 @@
         }
       },
       isFireboundaryDrawable: function(bushfire) {
-        return bushfire.get('status') === "new" || (bushfire.get('report_status') === 1) || (bushfire.get('report_status') === 2)
+        return bushfire.get('status') === "new" || (bushfire.get('report_status') === 1) || (bushfire.get('report_status') === 2) || (bushfire.get('report_status') === 3)
       },
       isEditable: function(bushfire) {
         try{
@@ -1357,9 +1395,29 @@
                     spatialData["area"] = null
                 }
 
+                // Area breakdown should still run when only origin point was modified,
+                // as long as the feature already has a fire boundary geometry.
+                if (!fireboundary) {
+                    var existingFireboundary = geometries.find(function(g) {return g instanceof ol.geom.MultiPolygon}) || null
+                    fireboundary = (existingFireboundary && existingFireboundary.getPolygons().length > 0)
+                        ? existingFireboundary.getCoordinates()
+                        : null
+                }
+
                 var tenure_area_task = null
                 var tasks = vm.featureTasks(vm.target_feature);
-                if (fireboundary && (modifyType & 2) === 2 && caller !== 'showprogress') {
+                /*
+                 * if grey bushfires not required to have area breakdown use this code.:
+                 * if (fireboundary && (modifyType & 2) === 2 && caller !== 'showprogress') {
+                 *     spatialData["area"] = null
+                 *     var tenure_area_task = tasks.find(task => task.taskId === 'tenure_area');
+                 *     if (!tenure_area_task){
+                 *         var tenure_area_task = vm._taskManager.addTask(feat,"getSpatialData","tenure_area","Calculate fire boundary areas",utils.WAITING)
+                 *     }
+                 * }
+                 */
+                if (fireboundary && caller !== 'showprogress') {
+                    spatialData["area"] = null
                     var tenure_area_task = tasks.find(task => task.taskId === 'tenure_area');
                     if (!tenure_area_task){
                         var tenure_area_task = vm._taskManager.addTask(feat,"getSpatialData","tenure_area","Calculate fire boundary areas",utils.WAITING)
@@ -1695,59 +1753,63 @@
                         }
 
                     }
-                    var layers =  null
-                    if (["new","initial"].indexOf(feat.get('status')) >= 0 )  {
-                        layers =  null
-                    } else {
-                        layers = [
-                            {
-                                id:"legislated_lands_and_waters",
-                                layerid:getLayerId("cddp:legislated_lands_and_waters"),
-                                cqlfilter:"category<>'State Forest'",
-                                kmiservice:vm.env.kmiService,
-                                properties:{
-                                    category:"category"
-                                },
-                                primary_key:"ogc_fid"
+                    /*
+                     * if grey bushfires not required to have area breakdown use this code.
+                     * var layers = null
+                     * if (["new","initial"].indexOf(feat.get('status')) >= 0 ) {
+                     *     layers = null
+                     * } else {
+                     *     layers = [ ... ]
+                     * }
+                     */
+                    var layers = [
+                        {
+                            id:"legislated_lands_and_waters",
+                            layerid:getLayerId("cddp:legislated_lands_and_waters"),
+                            cqlfilter:"category<>'State Forest'",
+                            kmiservice:vm.env.kmiService,
+                            properties:{
+                                category:"category"
                             },
-                            {
-                                id:"state_forest_plantation_distribution",
-                                layerid:getLayerId("cddp:state_forest_plantation_distribution"),
-                                kmiservice:vm.env.kmiService,
-                                properties:{
-                                    category:"fbr_fire_r"
-                                },
-                                primary_key:"ogc_fid"
+                            primary_key:"ogc_fid"
+                        },
+                        {
+                            id:"state_forest_plantation_distribution",
+                            layerid:getLayerId("cddp:state_forest_plantation_distribution"),
+                            kmiservice:vm.env.kmiService,
+                            properties:{
+                                category:"fbr_fire_r"
                             },
-                            {
-                                id:"dept_interest_lands_and_waters",
-                                layerid:getLayerId("cddp:dept_interest_lands_and_waters"),
-                                kmiservice:vm.env.kmiService,
-                                properties:{
-                                    category:"category"
-                                },
-                                primary_key:"ogc_fid"
+                            primary_key:"ogc_fid"
+                        },
+                        {
+                            id:"dept_interest_lands_and_waters",
+                            layerid:getLayerId("cddp:dept_interest_lands_and_waters"),
+                            kmiservice:vm.env.kmiService,
+                            properties:{
+                                category:"category"
                             },
-                            {
-                                id:"other_tenures",
-                                layerid:getLayerId("cddp:other_tenures"),
-                                kmiservice:vm.env.kmiService,
-                                properties:{
-                                    category:"brc_fms_le"
-                                },
-                                primary_key:"ogc_fid"
+                            primary_key:"ogc_fid"
+                        },
+                        {
+                            id:"other_tenures",
+                            layerid:getLayerId("cddp:other_tenures"),
+                            kmiservice:vm.env.kmiService,
+                            properties:{
+                                category:"brc_fms_le"
                             },
-                            {
-                                id:"sa_nt_burntarea",
-                                layerid:getLayerId("cddp:sa_nt_state_polygons_burntarea"),
-                                kmiservice:vm.env.kmiService,
-                                properties:{
-                                    category:"name"
-                                },
-                                primary_key:"ogc_fid"
-                            }
-                        ]
-                    }
+                            primary_key:"ogc_fid"
+                        },
+                        {
+                            id:"sa_nt_burntarea",
+                            layerid:getLayerId("cddp:sa_nt_state_polygons_burntarea"),
+                            kmiservice:vm.env.kmiService,
+                            properties:{
+                                category:"name"
+                            },
+                            primary_key:"ogc_fid"
+                        }
+                    ]
                     $.ajax({
                         url: "/api/bfrs_calculation_queue",
                         dataType:"json",
@@ -2445,11 +2507,25 @@
         feature.set('status', this._reportStatus[feature.get('report_status') || 99999], true)
 
         var geometries = feature.getGeometry()?[feature.getGeometry()]:[]
-        if (feature.get("fire_boundary")) {
-            var fire_boundary = JSON.parse(feature.get("fire_boundary"))
-            if (fire_boundary.coordinates) {
+        if (feature.get("fire_boundary")) { 
+            var fire_boundary = feature.get("fire_boundary");          
+            if (typeof fire_boundary === "string") {
+                try {
+                    fire_boundary = JSON.parse(fire_boundary);
+                } catch (e) {
+                    fire_boundary = null;
+                }
+            }
+            if (fire_boundary && fire_boundary.coordinates) {
                 if (!this.isFireboundaryDrawable(feature)) {
-                    feature.set("fire_boundary", new ol.geom.Polygon(fire_boundary.coordinates).getExtent(), true)
+                    
+                    var fbCoords = fire_boundary.coordinates;
+
+                    var geom = fire_boundary.type === 'MultiPolygon'
+                        ? new ol.geom.MultiPolygon(fbCoords)
+                        : new ol.geom.MultiPolygon([fbCoords]);
+
+                    feature.set("fire_boundary", geom.getExtent(), true);
                 } else {
                     var fbCoords = fire_boundary.coordinates
                     geometries.push(
@@ -3533,16 +3609,16 @@
         }, true)
       },
       
-	  resetFilters: function() {
+    resetFilters: function() {
         this.region = ""
         this.district = ""
-        this.dateRange = ""
-        this.startDate = ""
-        this.endDate = ""
+        this.dateRange = "70001"
+        this.changeDateRange()
         this.statusFilter = "all_reports"
         this.updateCQLFilter(0)
       },      
 	  refreshBushfires: function() {
+        this.isFeatureListLoading = true
         this.bushfireMapLayer.getSource().loadSource("query")
         this.refreshFinalFireboundaryLayer()
         if (this.selectedFeatures.getLength() > 0) {
@@ -3590,8 +3666,10 @@
                         vm._download_cql_filter = cql_filter
                     }
                     //clear bushfire filter or change other filter
+                    vm.isFeatureListLoading = true
                     vm.bushfireMapLayer.getSource().loadSource("query", callback)
                 } catch(ex) {
+                    vm.isFeatureListLoading = false
                     //ignore the exception
                     //alert(ex)
                 }
@@ -3811,6 +3889,7 @@
                 vm._bfrsStatus.phaseEnd("load_profile")
             },
             error: function (xhr,status,message) {
+                vm.isFeatureListLoading = false
                 alert(xhr.status + " : " + (xhr.responseText || message))
                 vm._bfrsStatus.phaseFailed("load_profile","Failed to loading user profile data. status = " + xhr.status + " , message = " + (xhr.responseText || message))
             },
@@ -3897,6 +3976,7 @@
                 vm._bfrsStatus.phaseEnd("load_regions")
             },
             error: function (xhr,status,message) {
+                vm.isFeatureListLoading = false
                 alert(xhr.status + " : " + (xhr.responseText || message))
                 vm._bfrsStatus.phaseFailed("load_regions","Failed to loading regions data. status = " + xhr.status + " , message = " + (xhr.responseText || message))
             },
@@ -4043,6 +4123,8 @@
 
         // enable resource bfrs layer, if disabled
         if (!this.bushfireMapLayer) {
+          // avoid an initial unfiltered WFS load; query only after the BFRS filter is applied
+          this.bushfireLayer.initialLoad = false
           this.catalogue.onLayerChange(this.bushfireLayer, true)
         } else if (this.active.isHidden(this.bushfireMapLayer)) {
             this.active.toggleHidden(this.bushfireMapLayer)
@@ -4122,8 +4204,8 @@
 		disableDblClickSelection: true,
 		leftArrow:'<<',
 		rightArrow:'>>',
-        startDate:moment().subtract(13,"months").format("YYYY-MM-DD") + " 00:00",
-        endDate:moment().format("YYYY-MM-DD") + " 23:59",
+        startDate:null,
+        endDate:null,
         pickTime:true,
         minuteStep:1
       });
@@ -4138,8 +4220,8 @@
 		disableDblClickSelection: true,
 		leftArrow:'<<',
 		rightArrow:'>>',
-        startDate:moment().subtract(13,"months").format("YYYY-MM-DD") + " 00:00",
-        endDate:moment().format("YYYY-MM-DD") + " 23:59",
+        startDate:null,
+        endDate:null,
         pickTime:true,
         minuteStep:1
       });
@@ -4673,6 +4755,7 @@
         },
         */
         onerror: function(status, message) {
+            vm.isFeatureListLoading = false
             vm._bfrsStatus.phaseFailed("load_bushfires", status + " : " + message)
         },
         onload: function(loadType, vectorSource, features, defaultOnload) {
@@ -4785,6 +4868,7 @@
                     delete vm.whoami['bushfire']["permission"]["changed"]
                     vm.revision += 1
                 }
+                vm.isFeatureListLoading = false
                 vm._bfrsStatus.phaseEnd("load_bushfires")
             }
             vm._checkPermission(features, processResources)
@@ -4840,6 +4924,7 @@
             if (ev.mapLayer.get('id') === vm.env.bushfireListLayer) {
                 vm.features.clear()
                 vm._featurelist.clear()
+                vm.isFeatureListLoading = false
             }
         })
 

@@ -1298,7 +1298,10 @@
           if (options.mapLayer) return options.mapLayer
           var vm = this
           var url = this.env.kmiService + "/wfs"
-          if (options.id.startsWith("kaartdijin-boodja-private")){
+          if (this.env.bfrsProxyUrl && (this.env.envType.toLowerCase() === "uat" || this.env.envType.toLowerCase() === "dev") && options.id.includes("bushfirelist_latest")){
+              url = "/api/bfrs-proxy/"
+            }
+          else if (options.id.startsWith("kaartdijin-boodja-private")){
             url = this.env.kbService + "/wfs"
           }
           var withCredentialsSetting = true
@@ -2893,15 +2896,85 @@
       
 	  getPosition:function(coordinate, successCallback, failedCallback) {
           if (!successCallback) {
-              successCallback = function(data) {alert(data)}
+              successCallback = function() {}
           }
           if (!failedCallback) {
-              failedCallback = function(msg) {alert(msg)}
+              failedCallback = function() {}
           }
           var buffers = [50,100,150,200,300,400,1000,2000,100000]
           var vm = this
+          var parsePositionResponse = function(raw) {
+            if (!raw) {
+                return null
+            }
+            if (typeof raw === "object") {
+                return raw
+            }
+            if (typeof raw !== "string") {
+                return null
+            }
+
+            var text = raw.trim()
+            if (!text) {
+                return null
+            }
+
+            try {
+                return JSON.parse(text)
+            } catch (ex) {
+            }
+
+            // Some proxy paths prepend status text like "200: { ... }".
+            var start = text.indexOf("{")
+            var end = text.lastIndexOf("}")
+            if (start >= 0 && end > start) {
+                try {
+                    return JSON.parse(text.substring(start, end + 1))
+                } catch (ex) {
+                }
+            }
+            return null
+          }
+
+          var processPositionResponse = function(response, index) {
+            if (!response || response.totalFeatures === 0 || !response.features || response.features.length === 0) {
+                _getPosition(index + 1)
+                return
+            }
+
+            var nearestTown = null
+            var nearestDistance = null
+            var distance = null
+            $.each(response.features,function(index,feature){
+                if (nearestTown === null) {
+                    nearestTown = feature
+                    nearestDistance = vm.measure.getLength([feature.geometry.coordinates,coordinate])
+                } else {
+                    distance = vm.measure.getLength([feature.geometry.coordinates,coordinate])
+                    if (distance < nearestDistance) {
+                        nearestTown = feature
+                        nearestDistance = distance
+                    }
+                }
+            })
+            nearestDistance = vm.measure.formatLength(nearestDistance,"km")
+            var bearing = null
+            var position = null
+            if (nearestDistance === 0) {
+                position = "0m of " + nearestTown.properties["name"]
+            } else {
+                bearing = vm.measure.getBearing(nearestTown.geometry.coordinates,coordinate)
+                position = nearestDistance + " " + vm.measure.getDirection(bearing, 16) + " of " + nearestTown.properties["name"]
+            }
+            successCallback(position)
+          }
           var _getPosition = function(index) {
+            if (index >= buffers.length) {
+                successCallback(null)
+                return
+            }
             var buffered = turf.bbox(turf.buffer(turf.point(coordinate),buffers[index],"kilometers"))
+            var url = null
             if (getLayerId("cddp:townsite_points").startsWith("kaartdijin-boodja-private")){
                   url = vm.env.kbService 
               }
@@ -2912,38 +2985,24 @@
                 url:url + "/wfs?service=wfs&version=2.0&request=GetFeature&typeNames=" + getLayerId("cddp:townsite_points") + "&outputFormat=json&bbox=" + buffered[1] + "," + buffered[0] + "," + buffered[3] + "," + buffered[2],
                 dataType:"json",
                 success: function (response, stat, xhr) {
-                   if (response.totalFeatures === 0) {
-                        _getPosition(index + 1)
-                    } else {
-                        var nearestTown = null
-                        var nearestDistance = null
-                        var distance = null
-                        $.each(response.features,function(index,feature){
-                            if (nearestTown === null) {
-                                nearestTown = feature
-                                nearestDistance = vm.measure.getLength([feature.geometry.coordinates,coordinate])
-                            } else {
-                                distance = vm.measure.getLength([feature.geometry.coordinates,coordinate])
-                                if (distance < nearestDistance) {
-                                    nearestTown = feature
-                                    nearestDistance = distance
-                                }
-                            }
-                        })
-                        nearestDistance = vm.measure.formatLength(nearestDistance,"km")
-                        var bearing = null
-                        var position = null
-                        if (nearestDistance === 0) {
-                            position = "0m of " + nearestTown.properties["name"]
-                        } else {
-                            bearing = vm.measure.getBearing(nearestTown.geometry.coordinates,coordinate)
-                            position = nearestDistance + " " + vm.measure.getDirection(bearing, 16) + " of " + nearestTown.properties["name"]
-                        }
-                        successCallback(position)
-                    }
+                    processPositionResponse(response, index)
                 },
                 error: function (xhr,status,message) {
-                    failedCallback(xhr.status + " : " + (xhr.responseText || message))
+                    var recoveredResponse = null
+                    if (xhr) {
+                        recoveredResponse = parsePositionResponse(xhr.responseJSON) || parsePositionResponse(xhr.responseText)
+                    }
+                    if (!recoveredResponse) {
+                        recoveredResponse = parsePositionResponse(message)
+                    }
+
+                    if (recoveredResponse && (recoveredResponse.type === "FeatureCollection" || Array.isArray(recoveredResponse.features) || recoveredResponse.totalFeatures !== undefined)) {
+                        processPositionResponse(recoveredResponse, index)
+                        return
+                    }
+                    var errorStatus = xhr ? xhr.status : "error"
+                    var errorText = xhr ? (xhr.responseText || message) : message
+                    failedCallback(errorStatus + " : " + errorText)
                 },
                 xhrFields: {
                     withCredentials: true

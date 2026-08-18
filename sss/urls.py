@@ -45,6 +45,7 @@ urlpatterns = [
     path("api/load_bfrs_status.json", api.load_bfrs_status, name='load_bfrs_status'),
     path("api/bfrs_calculation_queue", api.bfrs_calculation_queue),
     path("api/clear_queue", api.clear_queue, name='clear_queue'),
+    path("api/bfrs-proxy/", api.api_bfrs_proxy, name='api_bfrs_proxy'),
     re_path(
         "geoproxy/(?P<request_path>[A-Za-z0-9-]+)/(?P<path>.*)",
         api.mapProxyView,

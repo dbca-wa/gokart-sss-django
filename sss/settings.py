@@ -187,6 +187,7 @@ KB_API_URL=decouple.config("KB_URL", default="https://kaartdijin-boodja-geoserve
 HOTSPOT_API_URL=decouple.config("HOTSPOT_URL", default="https://hotspots.dbca.wa.gov.au")
 CATALOGUE_URL=decouple.config("CATALOGUE_URL", default="https://csw-uat.dbca.wa.gov.au")
 BFRS_URL=decouple.config("BFRS_URL", default="https://bfrs-uat.dbca.wa.gov.au")
+BFRS_PROXY_URL=decouple.config("BFRS_PROXY_URL", default="")
 HOTSPOT_URL=decouple.config("HOTSPOT_URL", default="https://hotspots.dbca.wa.gov.au/geoserver/hotspots/ows")
 AUTH2_BASIC_AUTH_USER=decouple.config("AUTH2_BASIC_AUTH_USER", default="admin")
 AUTH2_BASIC_AUTH_PASSWORD=decouple.config("AUTH2_BASIC_AUTH_PASSWORD", default="nopassword")
