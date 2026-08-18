@@ -160,6 +160,19 @@ def isInBandFunc(datasource,band,bandTime):
     except:
         return False
 
+def isInDailyBandByDateFunc(datasource,band,bandTime):
+    """
+    Band match function for daily datasets whose timestamps are stored at UTC midnight.
+    UTC midnight equals Perth 08:00 (UTC+8), so the standard isInBandFunc misses rows
+    at 00:00, 03:00, and 06:00 Perth time (their diff is negative).
+    This function instead compares the Perth calendar date of bandTime against the
+    Perth calendar date of band["start_time"], so all rows within the same local day match.
+    """
+    try:
+        return band["start_time"].date() == bandTime.date()
+    except:
+        return False
+
 def getEpsgSrs(srsid):
     srs = srsid.split(":")
     if len(srs) != 2 or srs[0] != "EPSG":
@@ -191,7 +204,7 @@ def loadDatasource(datasource):
             band.clear()
 
         #print "Begin to load raster datasource: ".format(datasource["datasource"])
-        ds = gdal.Open(datasource["datasource"])
+        ds = gdal.Open(datasource["datasource"], gdal.GA_ReadOnly)
 
         datasource["geotransform"] =  ds.GetGeoTransform()
 
@@ -208,6 +221,10 @@ def loadDatasource(datasource):
         if len(datasource["bands"]) > ds.RasterCount:
             del datasource["bands"][ds.RasterCount:]
 
+        if datasource["file"]:
+            epoch_sync_time = sync_time(datasource["file"])
+            sync_date_time = convertEpochTimeToDatetime(epoch_sync_time)
+            datasource["metadata"]["sync_time"] = sync_date_time
         #load band metadata
         index = 1
         while index <= ds.RasterCount:
@@ -284,11 +301,24 @@ def prepareDatasource(datasource):
             return
     
         if datasource["file"].lower().endswith(".grb"):
-            if "datasource" not in datasource:
+            # Use get() to check both key existence and value: when a file was missing at
+            # startup, datasource["datasource"] is set to None (key exists, value is None).
+            # The old check `"datasource" not in datasource` would skip this block and leave
+            # the path as None even after the file becomes available later (e.g. after FTP sync).
+            if not datasource.get("datasource"):
                 datasource["datasource"] = datasource["file"]
         elif (datasource["file"].lower().endswith(".nc")):
-            if "datasource" not in datasource:
-                datasource["datasource"] = datasource["file"]
+            # Same reason as above: use get() so a previously-None value is re-evaluated.
+            if not datasource.get("datasource"):
+                # Some NetCDF files contain multiple variables (e.g. max_fbi and land_sea_mask).
+                # When a file has multiple variables, GDAL cannot determine which one to open
+                # and returns 0 bands if the plain file path is used.
+                # If "netcdf_variable" is specified in the datasource config, use the GDAL
+                # sub-dataset syntax 'NETCDF:"path":variable' to open the correct variable.
+                if datasource.get("netcdf_variable"):
+                    datasource["datasource"] = 'NETCDF:"{}":{}'.format(datasource["file"], datasource["netcdf_variable"])
+                else:
+                    datasource["datasource"] = datasource["file"]
         elif (datasource["file"].lower().endswith(".nc.gz")):
             fileinfo = os.stat(datasource["file"])
     
@@ -348,7 +378,12 @@ def prepareDatasource(datasource):
             datasource["datasource"] = None
             return
     
-        if datasource["loadstatus"]["status"] not in ("loaded","notexist","notsupport"):
+        # "notexist" is intentionally excluded from this guard so that if the file was
+        # missing on a previous call (status="notexist") but is now present, the status
+        # gets reset to "inited" and the datasource is reloaded on the next syncDatasource
+        # call.  "notsupport" is kept excluded because a wrong file format will never fix
+        # itself and should not be retried.
+        if datasource["loadstatus"]["status"] not in ("loaded","notsupport"):
             datasource["loadstatus"]["status"] = "inited"
             if "message" in datasource["loadstatus"]:
                 del datasource["loadstatus"]["message"]
@@ -373,10 +408,12 @@ def syncDatasource(datasource):
             return
 
         #datasource is prepared. 
-        ds = gdal.Open(datasource["datasource"])
+        ds = gdal.Open(datasource["datasource"], gdal.GA_ReadOnly)
         if datasource["loadstatus"].get('status') == 'loaded':
             if datasource["metadata_f"]["refresh_time"](ds)  != datasource["metadata"]["refresh_time"]:
                 datasource["loadstatus"]["status"]="outdated"
+                # Discard the stale handle; a fresh one will be opened after reload below
+                ds = None
 
         #try to reload datasource if required
         while (datasource["loadstatus"].get('status') or "loadfailed") != "loaded":
@@ -389,6 +426,9 @@ def syncDatasource(datasource):
                 #loading by other threads, wait
                 time.sleep(0.1)
 
+        # If the datasource was reloaded, open a fresh handle so callers read up-to-date data
+        if ds is None:
+            ds = gdal.Open(datasource["datasource"], gdal.GA_ReadOnly)
         return ds
     finally:
         pass
@@ -498,7 +538,17 @@ def getFireDangerRating(band,data):
     else:
         return fdr_index["name"]
 
-   
+
+
+def sync_time(path):
+    try:
+        # ds is the datasource dict; `file_key` usually is "file"
+        mtime = int(os.path.getmtime(path))  # seconds since epoch (float)
+        return str(mtime)               # normalize to int seconds
+    except Exception:
+        return None
+
+
 #raster_datasources={"bom":{}}
 raster_datasources={
     "bom":{
@@ -1927,6 +1977,9 @@ raster_datasources={
         },
         "IDZ10137_AUS_AFDRS_max_fbi_SFC":{
             "file":os.path.join(settings.BOM_HOME,"adfd","IDZ10137_AUS_AFDRS_max_fbi_SFC.nc"),
+            # This NetCDF file contains multiple variables (max_fbi and land_sea_mask).
+            # "netcdf_variable" tells prepareDatasource which variable to open via GDAL sub-dataset syntax.
+            "netcdf_variable":"max_fbi",
             "name":"FBI MAX",
             "sort_key":("fire","max"),
             "metadata_f":{
@@ -1939,7 +1992,9 @@ raster_datasources={
                 "start_time":getEpochTimeFunc("NETCDF_DIM_time"),
             },
             "band_f":{
-                "band_match":isInBandFunc,
+                # The max_fbi file stores timestamps at UTC midnight (= Perth 08:00).
+                # Use isInDailyBandByDateFunc to match all Perth rows on the same calendar date.
+                "band_match":isInDailyBandByDateFunc,
             },
             "options":{
                 "title":"FBI MAX",
@@ -2179,7 +2234,7 @@ def getRasterData(options,debug=False):
                 #retrieve data failed, maybe be caused by ftp sync process; retrieved it again
                 if runtimes == 1:
                     ds = None
-                    ds = gdal.Open(datasource["datasource"])
+                    ds = gdal.Open(datasource["datasource"], gdal.GA_ReadOnly)
                 else:
                     raise
     except:
@@ -2522,6 +2577,9 @@ def weatheroutlook(request, fmt):
                 if "context" in datasource and datasource["context"].get("refresh_time"):
                     if "latest_refresh_time" not in  requestData or requestData["latest_refresh_time"] < datasource["context"]["refresh_time"]:
                         requestData["latest_refresh_time"] = datasource["context"]["refresh_time"]
+                if "context" in datasource and datasource["context"].get("sync_time"):
+                    if "latest_sync_time" not in  requestData or requestData["latest_sync_time"] < datasource["context"]["sync_time"]:
+                        requestData["latest_sync_time"] = datasource["context"]["sync_time"]
 
             for datasource in outlook.get("times_data",[]):
                 if datasource.get("group"):
@@ -2535,6 +2593,9 @@ def weatheroutlook(request, fmt):
                         if "context" in ds and ds["context"].get("refresh_time"):
                             if "latest_refresh_time" not in  requestData or requestData["latest_refresh_time"] < ds["context"]["refresh_time"]:
                                 requestData["latest_refresh_time"] = ds["context"]["refresh_time"]
+                        if "context" in ds and ds["context"].get("sync_time"):
+                            if "latest_sync_time" not in  requestData or requestData["latest_sync_time"] < ds["context"]["sync_time"]:
+                                requestData["latest_sync_time"] = ds["context"]["sync_time"]
                 else:
                     datasource.update(getRasterData({
                         "datasource":datasource,
@@ -2545,6 +2606,9 @@ def weatheroutlook(request, fmt):
                     if "context" in datasource and datasource["context"].get("refresh_time"):
                         if "latest_refresh_time" not in  requestData or requestData["latest_refresh_time"] < datasource["context"]["refresh_time"]:
                             requestData["latest_refresh_time"] = datasource["context"]["refresh_time"]
+                    if "context" in datasource and datasource["context"].get("sync_time"):
+                        if "latest_sync_time" not in  requestData or requestData["latest_sync_time"] < datasource["context"]["sync_time"]:
+                            requestData["latest_sync_time"] = datasource["context"]["sync_time"]
     
         result = requestData
         result["issued_time"] = datetime.datetime.now(settings.PERTH_TIMEZONE)

@@ -765,13 +765,17 @@
       // force OL to approximate a fixed scale (1:1K increments)
       setScale: function (scale) {
         // while (Math.abs(this.getScale() - scale) > 0.001) {
-          this.olmap.getView().setResolution(this.olmap.getView().getResolution() * scale / this.getScale())
+          var currentScale = this.getScale()
+          if (currentScale === null) { return }
+          this.olmap.getView().setResolution(this.olmap.getView().getResolution() * scale / currentScale)
         // }
         this.scale = scale
       },
       // return the scale (1:1K increments)
+      // Returns null if the map size is not yet available (e.g. during viewport changes on mobile)
       getScale: function () {
-        var size = this.olmap.getSize()              
+        var size = this.olmap.getSize()
+        if (!size || size[0] === 0 || size[1] === 0) { return null }
         var center = this.getCenter()        
         var extent = this.olmap.getView().calculateExtent(size)        
       // var center_lat_lon = ol.proj.transform(this.getCenter(), 'EPSG:3857', 'EPSG:4326')        
@@ -779,8 +783,8 @@
 
         // var distance = this.$root.wgs84Sphere.haversineDistance([extent[0], center[1]], center) * 2
         var distance = ol.sphere.getDistance([extent[0], center[1]], center) * 2;
-        
-        return distance * this.dpmm / size[0] 
+        var scale = distance * this.dpmm / size[0]
+        return isFinite(scale) ? scale : null
       },
       // get the fixed scale (1:1K increments) closest to specified or the current scale
       getFixedScale: function (scale) {
@@ -795,6 +799,7 @@
       },
       // generate a human-readable scale string
       getScaleString: function (scale) {
+        if (scale === null || scale === undefined || !isFinite(scale)) { return '' }
         if (Math.round(scale * 100) / 100 < 10.0) {
           return '1:' + (Math.round(scale * 1000)).toLocaleString()
         } else if (Math.round(scale * 100) / 100 >= 1000.0) {
@@ -1073,7 +1078,7 @@
                 } else {
                     d = moment.tz("Australia/Perth")
                 }
-                var timddiff = 0
+                var timediff = 0
                 var timeIndex = null
                 $.each(layer.timeline,function(index,timelineLayer) {
                     timediff = d - moment.fromLocaleString(timelineLayer[0])
@@ -1861,12 +1866,7 @@
         else{
           layer_id = options.identifier
         }
-        if (layer_id.startsWith("kaartdijin-boodja-private")){
-            url = this.env.kbService 
-        }
-        else {
-              url = this.env.kmiService
-          }
+        const url = getLayerUrl(layer_id, this.env);
         var layer = $.extend({
           opacity: 1,
           name: 'Mapbox Outdoors',
@@ -2254,6 +2254,13 @@
         if (options.base) {
           options.format = 'image/jpeg'
         }
+        if (options.map_server_url){
+          url = options.map_server_url
+        }
+        else{
+          url = getLayerUrl(options.id, this.env);
+        }
+        
         var layer = $.extend({
           opacity: 1,
           name: 'Mapbox Outdoors',
@@ -2262,9 +2269,8 @@
           tileSize: 1024,
           style: '',
           projection: 'EPSG:4326',
-          wms_url: options.map_server_url + "/wms"
+          wms_url: url + "/wms"
         }, options)
-
         // create a tile source
         var imgSource = new ol.source.ImageWMS({
           url: layer.wms_url,
@@ -2444,7 +2450,8 @@
 
         // setup scale events
         this.olmap.on('postrender', function () {
-          vm.scale = vm.getScale()
+          var s = vm.getScale()
+          if (s !== null) { vm.scale = s }
         })
 
 
@@ -2477,22 +2484,17 @@
               var position = vm.olmap.getLayers().getArray().findIndex(function(l){return l === ev.element})
               if (position >= 0) {
                   $.each(ev.element.layer.dependentLayers, function(index,l){
-                      if (!l.map_server_url){
-                          catalogue_layer = vm.$root.catalogue.getLayer(ev.element.layer.id)
-                          if(catalogue_layer && catalogue_layer.map_server_url){
-                              l['map_server_url'] = catalogue_layer.map_server_url
-                            }
-                            else{
-                              //layer does not exist in catalogue
-                              //added support for kb-layers thats not in catalogue
-                              if (ev.element.layer.id.startsWith("kaartdijin-boodja-private")){
-                                      l['map_server_url'] = vm.env.kbService 
-                                  }
-                              else {
-                                  l['map_server_url'] = vm.env.kmiService
-                              }
-                            }
+                    if (!l.map_server_url) {
+                        const catalogue_layer = vm.$root.catalogue.getLayer(ev.element.layer.id);
+
+                        if (catalogue_layer && catalogue_layer.map_server_url) {
+                            l.map_server_url = catalogue_layer.map_server_url;
+                        } else {
+                            //added support for kb-layers thats not in catalogue
+                            // Layer not in catalogue, fallback to getLayerUrl
+                            l.map_server_url = getLayerUrl(ev.element.layer.id, vm.env);
                         }
+                    }
                       if (!l.element) {
                           l.element = vm['create' + l.type](l)
                           l.element.setOpacity(l.opacity || 1)
@@ -2633,7 +2635,7 @@
                 }),
                 preenable:function(enable){
                     if (enable) {
-                        if (vm._overviewLayer) {
+                        if (vm._overviewLayer && vm._overviewLayer.type) {
                           this.controls.getOverviewMap().addLayer(vm['create' + vm._overviewLayer.type](vm._overviewLayer))   
                           // new ol.Map().addLayer(vm['create' + vm._overviewLayer.type](vm._overviewLayer))                     
                           vm._overviewLayer.mapLayer.postAdd()
@@ -2649,50 +2651,50 @@
                         }
                     }
                 },
-                postenable:function(enable) {
-                    if (enable) {
-                        var overviewMapControl = this.controls
-                        var extentbox = $(".ol-custom-overviewmap").find(".ol-overlay-container")
-                        var overviewMap = $(".ol-custom-overviewmap").find(".ol-overviewmap-map")
-                        if (extentbox.length) {
-                            this._interact = interact(extentbox.get(0),{})
-                            .draggable({
-                                intertia:true,
-                                restrict:{
-                                    restriction:overviewMap.get(0),
-                                    endOnly:true,
-                                    elementRect:{top:0,left:0,bottom:1,right:1}
-                                },
-                                autoScroll:true,
-                                onmove: function(event){
-                                    // keep the dragged position in the data-x/data-y attributes
-                                    //console.log(extentbox.get(0).style.left + "\t" + extentbox.get(0).style.right + "\t" + extentbox.get(0).style.top + "\t" + extentbox.get(0).style.bottom)
-                                    //console.log("x0 = " + event.x0 +",y0= " + event.y0 + ",clientX0=" + event.clientX0 + ",clientY0=" + event.clientY0 + ",dx=" + event.dx + ",dy=" + event.dy)
-                                    if (extentbox.get(0).style.left) {
-                                        extentbox.get(0).style.left = (parseInt(extentbox.get(0).style.left) + event.dx) + "px"
-                                    }
-                                    if (extentbox.get(0).style.right) {
-                                        extentbox.get(0).style.right = (parseInt(extentbox.get(0).style.right) + event.dx) + "px"
-                                    }
-                                    if (extentbox.get(0).style.bottom) {
-                                        extentbox.get(0).style.bottom = (parseInt(extentbox.get(0).style.bottom) - event.dy) + "px"
-                                    }
-                                    if (extentbox.get(0).style.top) {
-                                        extentbox.get(0).style.top = (parseInt(extentbox.get(0).style.top) - event.dy) + "px"
-                                    }
-                                },
-                                onend:function(event) {
-                                    var centralPosition = [
-                                        (extentbox.get(0).style.left)?(parseInt(extentbox.get(0).style.left) + extentbox.width() / 2):(parseInt(extentbox.get(0).style.right) - extentbox.width() / 2) ,
-                                        (extentbox.get(0).style.bottom)?(overviewMap.height() - parseInt(extentbox.get(0).style.bottom) - extentbox.height() / 2):(overviewMap.height() - parseInt(extentbox.get(0).style.top) + extentbox.height() / 2)
-                                    ]
-                                    //console.log(extentbox.get(0).style.left + "\t" + extentbox.get(0).style.bottom + "\t" + extentbox.width() + "\t" + extentbox.height() + "\t" + centralPosition + "\t" + overviewMapControl.getOverviewMap().getCoordinateFromPixel(centralPosition))
-                                    overviewMapControl.getMap().getView().setCenter(overviewMapControl.getOverviewMap().getCoordinateFromPixel(centralPosition))
-                                }
-                            })
-                        }
-                    }
-                }
+                // postenable:function(enable) {
+                //     if (enable) {
+                //         var overviewMapControl = this.controls
+                //         var extentbox = $(".ol-custom-overviewmap").find(".ol-overlay-container")
+                //         var overviewMap = $(".ol-custom-overviewmap").find(".ol-overviewmap-map")
+                //         if (extentbox.length) {
+                //             this._interact = interact(extentbox.get(0),{})
+                //             .draggable({
+                //                 intertia:true,
+                //                 restrict:{
+                //                     restriction:overviewMap.get(0),
+                //                     endOnly:true,
+                //                     elementRect:{top:0,left:0,bottom:1,right:1}
+                //                 },
+                //                 autoScroll:true,
+                //                 onmove: function(event){
+                //                     // keep the dragged position in the data-x/data-y attributes
+                //                     //console.log(extentbox.get(0).style.left + "\t" + extentbox.get(0).style.right + "\t" + extentbox.get(0).style.top + "\t" + extentbox.get(0).style.bottom)
+                //                     //console.log("x0 = " + event.x0 +",y0= " + event.y0 + ",clientX0=" + event.clientX0 + ",clientY0=" + event.clientY0 + ",dx=" + event.dx + ",dy=" + event.dy)
+                //                     if (extentbox.get(0).style.left) {
+                //                         extentbox.get(0).style.left = (parseInt(extentbox.get(0).style.left) + event.dx) + "px"
+                //                     }
+                //                     if (extentbox.get(0).style.right) {
+                //                         extentbox.get(0).style.right = (parseInt(extentbox.get(0).style.right) + event.dx) + "px"
+                //                     }
+                //                     if (extentbox.get(0).style.bottom) {
+                //                         extentbox.get(0).style.bottom = (parseInt(extentbox.get(0).style.bottom) - event.dy) + "px"
+                //                     }
+                //                     if (extentbox.get(0).style.top) {
+                //                         extentbox.get(0).style.top = (parseInt(extentbox.get(0).style.top) - event.dy) + "px"
+                //                     }
+                //                 },
+                //                 onend:function(event) {
+                //                     var centralPosition = [
+                //                         (extentbox.get(0).style.left)?(parseInt(extentbox.get(0).style.left) + extentbox.width() / 2):(parseInt(extentbox.get(0).style.right) - extentbox.width() / 2) ,
+                //                         (extentbox.get(0).style.bottom)?(overviewMap.height() - parseInt(extentbox.get(0).style.bottom) - extentbox.height() / 2):(overviewMap.height() - parseInt(extentbox.get(0).style.top) + extentbox.height() / 2)
+                //                     ]
+                //                     //console.log(extentbox.get(0).style.left + "\t" + extentbox.get(0).style.bottom + "\t" + extentbox.width() + "\t" + extentbox.height() + "\t" + centralPosition + "\t" + overviewMapControl.getOverviewMap().getCoordinateFromPixel(centralPosition))
+                //                     overviewMapControl.getMap().getView().setCenter(overviewMapControl.getOverviewMap().getCoordinateFromPixel(centralPosition))
+                //                 }
+                //             })
+                //         }
+                //     }
+                // }
             },
             "scaleLine": {
                 enabled:false,
@@ -2780,12 +2782,8 @@
               layers = [layers]
           }
           var _getFeature = function(index) {
-            if (getLayerId(layers[index]["id"]).startsWith("kaartdijin-boodja-private")){
-                  url = vm.env.kbService 
-              }
-            else {
-                url = vm.env.kmiService
-            }
+            const layer_id = getLayerId(layers[index]["id"]);
+            url = getLayerUrl(layer_id, vm.env);
             $.ajax({
                 url:url + "/wfs?service=wfs&version=2.0&request=GetFeature&typeNames=" + getLayerId(layers[index]["id"]) + "&outputFormat=json&cql_filter=CONTAINS(" + (layers[index]["geom_field"] || "wkb_geometry") + ",POINT(" + coordinate[1]  + " " + coordinate[0] + "))",
                 dataType:"json",

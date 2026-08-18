@@ -46,7 +46,9 @@ var env = {
     bushfireFireBoundaryLatestLayer:"{{ settings.BUSHFIRE_FIREBOUNDARY_LATEST_LAYER }}",
     bushfireLayer:"{{ settings.BUSHFIRE_LAYER }}",
     bushfireFireBoundaryLayer:"{{ settings.BUSHFIRE_FIREBOUNDARY_LAYER }}",
-    
+    regionLayer:"{{ settings.REGION_LAYER }}",
+    districtLayer:"{{ settings.DISTRICT_LAYER }}",
+    sssVersion: "{{ settings.VERSION_NO }}",
     
 };
 

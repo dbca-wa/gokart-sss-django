@@ -27,6 +27,15 @@ global.tour = tour
 global.getLayerId = function(id) {
     return (env && env.layerMapping && env.layerMapping[id]) || id
 }
+global.getLayerUrl = function(layer_id, env) {
+  if (layer_id.startsWith("kaartdijin-boodja")) {
+      return env.kbService;
+  } else if (layer_id.startsWith("hotspots:")) {
+      return env.hotspotsUrl + "/wfs";
+  } else {
+      return env.kmiService;
+  }
+},
 //sometimes we use a different layer to get the detail layer information.
 global.getDetailLayerId = function(id) {
     return (env && env.detailLayerMapping && env.detailLayerMapping[id]) || (env && env.layerMapping && env.layerMapping[id]) || id
@@ -182,6 +191,16 @@ if (result) {
       }
       var storedData = utils.extend(JSON.parse(JSON.stringify(persistentData)), store || {}, volatileData)
       storedData['activeLayers'] = storedData['activeLayers'].filter(layer => !layer[0].includes("resource_tracking_history"));
+
+      // If view values are invalid (e.g. due to a mobile browser bug),
+      // fall back to defaults to prevent a crash on load.
+      if (!Array.isArray(storedData.view.center) || storedData.view.center.length !== 2 || !Number.isFinite(storedData.view.center[0]) || !Number.isFinite(storedData.view.center[1])) {
+        storedData.view.center = persistentData.view.center.slice()
+      }
+      if (!Number.isFinite(storedData.view.scale) || storedData.view.scale <= 0) {
+        storedData.view.scale = persistentData.view.scale
+      }
+
       global.gokart = new Vue({
         el: 'body',
         components: {
@@ -261,6 +280,16 @@ if (result) {
                   this.takeTour()
                 }
             },
+          'store.view.center': function(newValue, oldValue) {
+            if (!Array.isArray(newValue) || newValue.length !== 2 || !Number.isFinite(newValue[0]) || !Number.isFinite(newValue[1])) {
+              this.store.view.center = persistentData.view.center.slice()
+            }
+          },
+          'store.view.scale': function(newValue, oldValue) {
+            if (!Number.isFinite(newValue) || newValue <= 0) {
+              this.store.view.scale = persistentData.view.scale
+            }
+          },
             hints:function(newValue, oldValue) {
                 var vm = this
                 this.$nextTick(function(){
@@ -315,9 +344,37 @@ if (result) {
                     this.store.hints = arguments
                 }
               }
-          }
+          },
+          getCookie:function(name) {
+            const value = `; ${document.cookie}`;
+            const parts = value.split(`; ${name}=`);
+            if (parts.length === 2) return parts.pop().split(";").shift();
+            return null;
+          },
+          setCookie:function(name, value, days = 365) {
+            const date = new Date();
+            date.setTime(date.getTime() + days * 24 * 60 * 60 * 1000);
+            document.cookie = `${name}=${value}; expires=${date.toUTCString()}; path=/`;
+          },
+          checkAndUpdateCookie:function() {
+            const COOKIE_NAME = "sss_version";
+            const CURRENT_VERSION = env.sssVersion;
+
+            const cookieVersion = this.getCookie(COOKIE_NAME);
+
+            if (!cookieVersion || cookieVersion !== CURRENT_VERSION) {
+              // Either cookie is missing OR version mismatch
+              console.log("Cookie missing or version mismatch. Updating cookie and resetting SSS");
+              this.setCookie(COOKIE_NAME, CURRENT_VERSION);
+                //except settings, clear everything
+                localforage.setItem('sssOfflineStore', {settings:this.$root.persistentData.settings}).then(function (v) {
+                  document.location.reload()
+                })
+            }
         },
+      },
         ready: function () {
+          this.checkAndUpdateCookie();
           var self = this
           self.loading.app.phaseBegin("initialize", 20, "Initialize")
           // setup foundation, svg url support
@@ -326,13 +383,16 @@ if (result) {
           // set title
           $('title').text(profile.description)
           // calculate screen res
-          $('body').append('<div id="dpi" style="width:1in;display:none"></div>')
+          // Use visibility:hidden + position:absolute instead of display:none,
+          // because some mobile browsers (e.g. iOS Safari) return 0 for .width()
+          // on display:none elements, which would make dpmm=0 and break getScale().
+          $('body').append('<div id="dpi" style="width:1in;visibility:hidden;position:absolute"></div>')
           self.dpi = parseFloat($('#dpi').width())
-          self.store.dpmm = self.dpi / self.store.mmPerInch
+          self.store.dpmm = (self.dpi && self.dpi > 0) ? self.dpi / self.store.mmPerInch : 96 / self.store.mmPerInch
           $('#dpi').remove();
-          // get user info
-          (function () {
-            $.ajax({
+          // get user info - store the deferred so gk-init can wait for it
+          self._whoamiDeferred = (function () {
+            return $.ajax({
                 url: self.env.authUrl || "/sso/auth",
                 method:"GET",
                 dataType:"json",
@@ -740,45 +800,56 @@ if (result) {
                     self.map.initLayers(self.fixedLayers, self.store.activeLayers)
                     self.loading.app.phaseEnd("init_map_layers")
     
-                    // tell other components map is ready
+                    // tell other components map is ready - wait for whoami to be
+                    // populated first so components that gate on is_internal_dbca
+                    // (e.g. the IWF weather forecast icon) are always visible when
+                    // the user is entitled, regardless of network timing.
                     self.loading.app.phaseBegin("gk-init", 15, "Broadcast 'go-init' event")
                     failed_phase = "gk-init"
-                    self.$broadcast('gk-init')
-                    self.loading.app.phaseEnd("gk-init")
-    
-                    // after catalogue load trigger a tour
-                    self.loading.app.phaseBegin("gk-postinit", 15, "Broadcast 'go-init' event")
-                    failed_phase = "gk-postinit"
-                    self.$broadcast('gk-postinit')
-                    self.loading.app.phaseEnd("gk-postinit")
-    
-                    self.loading.app.phaseBegin("post_init", 10, "Post initialization")
-                    failed_phase = "post-init"
-                    self.store.layout.screenHeight = $(window).height()
-                    self.store.layout.screenWidth = $(window).width()
-                    $(window).resize(debounce(function(){
-                        if ($(window).height() !== self.store.layout.screenHeight) {
-                            self.store.layout.screenHeight = $(window).height()
+                    $.when(self._whoamiDeferred).always(function () {
+                        try {
+                        self.$broadcast('gk-init')
+                        self.loading.app.phaseEnd("gk-init")
+
+                        // after catalogue load trigger a tour
+                        self.loading.app.phaseBegin("gk-postinit", 15, "Broadcast 'go-init' event")
+                        failed_phase = "gk-postinit"
+                        self.$broadcast('gk-postinit')
+                        self.loading.app.phaseEnd("gk-postinit")
+
+                        self.loading.app.phaseBegin("post_init", 10, "Post initialization")
+                        failed_phase = "post-init"
+                        self.store.layout.screenHeight = $(window).height()
+                        self.store.layout.screenWidth = $(window).width()
+                        $(window).resize(debounce(function(){
+                            if ($(window).height() !== self.store.layout.screenHeight) {
+                                self.store.layout.screenHeight = $(window).height()
+                            }
+                            if ($(window).width() !== self.store.layout.screenWidth) {
+                                self.store.layout.screenWidth = $(window).width()
+                            }
+                        }, 200))
+                        $("#menu-tab-layers-label").trigger("click")
+                        self.store.activeMenu = "layers"
+                        self.layers.setup()
+                        $("#layers-active-label").trigger("click")
+                        self.store.activeSubmenu = "active"
+                        self.active.setup()
+
+                        self.loading.app.phaseEnd("post_init")
+
+                        if (self.store.settings.tourVersion !== tour.version) {
+                          self.takeTour()
                         }
-                        if ($(window).width() !== self.store.layout.screenWidth) {
-                            self.store.layout.screenWidth = $(window).width()
+                        } catch(err) {
+                            self.loading.app.phaseFailed(failed_phase, err)
+                            throw err
                         }
-                    }, 200))
-                    $("#menu-tab-layers-label").trigger("click")
-                    self.store.activeMenu = "layers"
-                    self.layers.setup()
-                    $("#layers-active-label").trigger("click")
-                    self.store.activeSubmenu = "active"
-                    self.active.setup()
-    
-                    self.loading.app.phaseEnd("post_init")
+                    })
                 } catch(err) {
                     //some exception happens
                     self.loading.app.phaseFailed(failed_phase, err)
                     throw err
-                }
-                if (self.store.settings.tourVersion !== tour.version) {
-                  self.takeTour()
                 }
               },function(reason){
                 self.loading.app.phaseEnd("load_catalogue")

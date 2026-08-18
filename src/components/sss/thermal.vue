@@ -352,7 +352,7 @@
 			if(this.showHotspotImages){
 				return this.revision && this._featurelist.getArray()
 			}
-			return this.revision && this._featurelist.getArray().reverse()
+			return this.revision && this._featurelist.getArray().slice().reverse()
         } catch (ex) {
             return [];
         }
@@ -856,7 +856,7 @@
                 vm._featurelist.extend(list)
 				
 				//get extent of filtered features and set extent of map to this
-				if (!this.showFlightFootprint) {
+				if (!vm.showFlightFootprint) {
 					
 					var extent = list[0].getGeometry().getExtent()	//.slice(0)
 					list.forEach(function(feature){ ol.extent.extend(extent,feature.getGeometry().getExtent())})
@@ -1254,8 +1254,8 @@
 
 	thermalStatus.phaseBegin("load_hotspots", 30, "Load hotspots", false, true)
 	  this.$root.fixedLayers.push({
-		  // type: 'WFSLayer',
-		  type: 'TileLayer',
+		//   type: 'WFSLayer',
+		  type: 'ImageLayer',
 		  name: 'Thermal Imaging Hotspots',
 		  id: 'hotspots:hotspot_centroids',
 		  features: vm._featurelist,

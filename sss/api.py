@@ -1,4 +1,4 @@
-from django.http import HttpResponse, JsonResponse, Http404
+from django.http import HttpResponse, JsonResponse, Http404,StreamingHttpResponse
 from django import conf
 from django.views.decorators.csrf import csrf_exempt
 from wagov_utils.components.proxy.views import proxy_view
@@ -15,6 +15,7 @@ import os
 import requests
 import base64
 import datetime
+import ast
 import json
 import pathlib
 import re
@@ -22,12 +23,18 @@ from io import BytesIO
 from sss.models import UserProfile, Proxy, MapServer, SpatialDataCalculation
 from sss import models as sss_models
 from sss.serializers import ProfileSerializer, AccountDetailsSerializer
+from django.http import FileResponse, Http404, HttpResponseForbidden
+import mimetypes
 from rest_framework import serializers
 from rest_framework.exceptions import ValidationError
 from sss import utils_cache
 from django.conf import settings
 from jinja2 import Template, Environment, FileSystemLoader
 from django.core.exceptions import ObjectDoesNotExist
+from sss.models import ManagementCommandStatus
+from django.utils import timezone
+from datetime import timedelta
+from sss import spatial_tile_cache
 
 def api_catalogue(request, *args, **kwargs):
     if request.user.is_authenticated:
@@ -133,19 +140,42 @@ def api_bfrs_region(request, *args, **kwargs):
 #     http_response.headers['Django-Cache-Expiry']= str(base64_json['cache_expiry']) + " seconds"
 #     return http_response
 
+
+
 def process_proxy(request, remoteurl, queryString, auth_user, auth_password):
     proxy_cache= None
     proxy_response = None
     proxy_response_content = None
     base64_json = {}
+
+    get_layers_lc = request.GET.get("layers", None)
+    get_layer_lc = request.GET.get("layer", None)   
+    get_layers_uc = request.GET.get("LAYERS", None) 
+    get_typename_lc = request.GET.get("typename", None) 
+
+
+
+    spatial_tile_folder = "other"
+    if get_layers_lc:
+        spatial_tile_folder=get_layers_lc
+    if get_layer_lc:
+        spatial_tile_folder=get_layer_lc        
+    if get_layers_uc:
+        spatial_tile_folder=get_layers_uc
+    if get_typename_lc:
+        spatial_tile_folder=get_typename_lc
+    
     query_string_remote_url=remoteurl+'?'+queryString
 
     cache_times_strings = utils_cache.get_proxy_cache()
     CACHE_EXPIRY=300
     BROWSER_CACHE_EXPIRY = None
+    CACHE_STATUS = "MISS"
+    current_date_time = datetime.datetime.strftime(datetime.datetime.now(),"%Y-%m-%d %H:%M:%S")
+    # proxy_cache = cache.get(query_string_remote_url)
+    proxy_cache = spatial_tile_cache.get_cache(spatial_tile_folder, query_string_remote_url)
 
-    proxy_cache = cache.get(query_string_remote_url)
-
+    # print (proxy_cache)
     for cts in cache_times_strings:
         if cts['layer_name'] in query_string_remote_url:
             CACHE_EXPIRY = cts['cache_expiry']
@@ -154,7 +184,8 @@ def process_proxy(request, remoteurl, queryString, auth_user, auth_password):
         #print (cts['layer_name'])
     if BROWSER_CACHE_EXPIRY is None:
         BROWSER_CACHE_EXPIRY = CACHE_EXPIRY
-    #print (CACHE_EXPIRY)
+    # proxy_cache = None
+
     if proxy_cache is None:
         #print ("NO CACHE")
         auth_details = None
@@ -162,23 +193,34 @@ def process_proxy(request, remoteurl, queryString, auth_user, auth_password):
             auth_details = None
         else:
             auth_details = {"user": auth_user, 'password' : auth_password}
-        proxy_response = proxy_view(request, remoteurl, basic_auth=auth_details, cookies={})    
-        proxy_response_content_encoded = base64.b64encode(proxy_response.content)
-        base64_json = {"status_code": proxy_response.status_code, "content_type": proxy_response.headers['content-type'], "content" : proxy_response_content_encoded.decode('utf-8'), "cache_expiry": CACHE_EXPIRY}
-        if proxy_response.status_code == 200: 
+        proxy_response = proxy_view(request, remoteurl, basic_auth=auth_details, cookies={})           
+        proxy_response_content_encoded = proxy_response.content
+        base64_json = {"status_code": proxy_response.status_code, "content_type": proxy_response.headers['content-type'], "cache_expiry": CACHE_EXPIRY, "browser_cache_expiry": BROWSER_CACHE_EXPIRY,"current_date_time": current_date_time}
+        if proxy_response.status_code in (200, 201):
             #print ("CREATING CACHE")
-            cache.set(query_string_remote_url, json.dumps(base64_json), CACHE_EXPIRY)
+            proxy_cache = spatial_tile_cache.set_cache(spatial_tile_folder,query_string_remote_url,proxy_response.content,CACHE_EXPIRY,base64_json)
         else:
-            cache.set(query_string_remote_url, json.dumps(base64_json), 5)
+            base64_json["cache_expiry"] = 15
+            BROWSER_CACHE_EXPIRY = 15
+            proxy_cache = spatial_tile_cache.set_cache(spatial_tile_folder,query_string_remote_url,proxy_response.content,15,base64_json)
+            # cache.set(query_string_remote_url, json.dumps(base64_json), 15)
     else:
-        print ("---- > USING CACHE < ----")
-        print (query_string_remote_url)
-        base64_json = json.loads(proxy_cache)
+        
+        CACHE_STATUS = "HIT"
+        base64_json = spatial_tile_cache.get_meta_data(spatial_tile_folder, query_string_remote_url)
+        BROWSER_CACHE_EXPIRY = base64_json.get("browser_cache_expiry", BROWSER_CACHE_EXPIRY)
+    
+    if proxy_cache[-3:] == 'png' or proxy_cache[-3:] == 'jpg':
+        http_response =   StreamingHttpResponse(spatial_tile_cache.file_iterator(proxy_cache), content_type=base64_json['content_type'], status=base64_json['status_code'])        
+    else:
+        http_response =   StreamingHttpResponse(spatial_tile_cache.file_iterator_plain(proxy_cache), content_type=base64_json['content_type'], status=base64_json['status_code'])        
 
-    proxy_response_content = base64.b64decode(base64_json["content"].encode())
-    http_response =   HttpResponse(proxy_response_content, content_type=base64_json['content_type'], status=base64_json['status_code'])    
-    http_response.headers['Django-Cache-Expiry']= str(base64_json['cache_expiry']) + " seconds"
-    http_response.headers['Cache-Control'] = 'public, max-age=' + str(BROWSER_CACHE_EXPIRY)+', must-revalidate'
+    http_response.headers['Django-Cache-Expiry'] = str(base64_json['cache_expiry']) + " seconds"
+    http_response.headers['Django-Cache-Status'] = CACHE_STATUS
+    http_response.headers['Django-Cache-File'] = proxy_cache
+    if "current_date_time" in base64_json:
+        http_response.headers['Django-Cache-Datetime'] = base64_json["current_date_time"]
+    http_response.headers['Cache-Control'] = 'private, max-age=' + str(BROWSER_CACHE_EXPIRY)+', must-revalidate'
     return http_response
 
 
@@ -280,7 +322,12 @@ def cataloguev2(request):
             catalogue_row['crs'] = c.crs
             catalogue_row['service_type'] = c.service_type
             catalogue_row['service_type_version'] = c.service_type_version
-            catalogue_row['legend'] = c.legend
+            if c.legend:
+                catalogue_row['legend'] = c.legend
+            elif hasattr(c, 'legend_file') and c.legend_file:
+                catalogue_row['legend'] = c.legend_file.url
+            else:
+                catalogue_row['legend'] = None
             catalogue_row['active'] = c.active
             catalogue_row['updated'] = c.updated.strftime("%d/%m/%Y %H:%M:%S")
             catalogue_row['created'] = c.created.strftime("%d/%m/%Y %H:%M:%S")
@@ -307,10 +354,7 @@ def cataloguev2(request):
         for c_csw in catalogue_csw:
             json_cs_csw = json.loads(c_csw.json_data)
             json_cs_csw['map_server_name'] = "kmi"
-            try:
-                kmi_url = MapServer.objects.get(name='kmi').url
-            except MapServer.DoesNotExist:
-                kmi_url = None
+            kmi_url = MapServer.objects.get(name='kmi').url
             json_cs_csw['map_server_url'] = kmi_url
             catalogue_array.append(json_cs_csw)
 
@@ -327,6 +371,27 @@ def gokart_client(request):
     context = {'settings': conf.settings}
     response = render(request, 'sss/client.html', context)
     response.headers["X-FRAME-OPTIONS"] = "ALLOWALL"
+    return response
+
+
+def getPrivateFile(request, file_path):
+    if not request.user.is_authenticated:
+        return HttpResponseForbidden("User is not authenticated")
+
+    private_media_root = settings.PRIVATE_MEDIA_STORAGE_LOCATION
+    full_file_path = os.path.join(private_media_root, file_path)
+
+    if not os.path.exists(full_file_path):
+        raise Http404("File not found")
+
+    content_type, _ = mimetypes.guess_type(full_file_path)
+    if not content_type:
+        content_type = "application/octet-stream"
+    extension = full_file_path.split(".")[-1].lower()
+    if extension in ["msg", "eml"]:
+        content_type = "application/vnd.ms-outlook"
+    response = FileResponse(open(full_file_path, 'rb'), content_type=content_type)
+    response['Content-Disposition'] = f'attachment; filename="{os.path.basename(full_file_path)}"'
     return response
 
 def sso_profile(request):
@@ -606,7 +671,7 @@ def himawari8(request, target):
     if len(result["layers"]) == 0:
         return HttpResponse(status=404)
     elif last_updatetime and last_updatetime == result["updatetime"]:
-        return "{}"
+        return JsonResponse({}, status=200)
     else:
         content_type = 'application/json'
         json_data = json.dumps(result)
@@ -657,7 +722,7 @@ def bfrs_calculation_queue(request):
         options = request.POST.get("options")
         user_email = request.user.email
         tasks = request.POST.get("tasks")
-        user = User.objects.get(email=user_email)
+        user = request.user
         current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         log_entry = "Added by {} on {}".format(user_email, current_time)
         caculation_queue_object = SpatialDataCalculation.objects.create(bfrs=bfrs, features=features, tasks=tasks, options=options, calculation_status=SpatialDataCalculation.CALCULATION_STATUS[0][0], user=user, logs=log_entry)
@@ -686,7 +751,31 @@ def spatial_calculation_progress(request, *args, **kwargs):
         last_uploaded_date = calculation_object.created.astimezone(conf.settings.PERTH_TIMEZONE).strftime('%a %b %d %Y %H:%M:%S AWST')
         submitter = calculation_object.user.email
         if(calculation_object.output):
-            result = json.loads(calculation_object.output.replace("'", '"').replace("nan", "null"))
+            # calculation_object.output is stored as the Python repr() of a dict, which
+            # uses single-quoted strings (e.g. {'key': 'value'}).
+            #
+            # The previous approach of .replace("'", '"') was fragile:
+            #   - It broke whenever a string value contained an apostrophe
+            #     (e.g. layer names like 'cddp:legislated_lands_and_waters').
+            #   - Its companion .replace("nan", "null") had no word-boundary guard,
+            #     so it would corrupt any value containing "nan" as a substring
+            #     (e.g. a hypothetical property value "banana" would become "baNulla").
+            #
+            # ast.literal_eval() correctly parses Python literal syntax, including
+            # nested dicts/lists and single-quoted strings with apostrophes.
+            #
+            # One pre-processing step is required: bare `nan` tokens produced by
+            # float('nan') area calculations are not valid Python literals, so they
+            # are replaced with None via a word-boundary regex before parsing.
+            # The \bnan\b pattern avoids corrupting substrings like "banana".
+            # Note: if a string *value* happened to be exactly "nan" (very unlikely
+            # for WA spatial data), it would become the string "None" instead — an
+            # acceptable trade-off vs. the original approach which was more broken.
+            #
+            # Finally, json.dumps/loads round-trips the result to ensure the
+            # structure is fully JSON-serialisable (e.g. Python None → JSON null).
+            raw = ast.literal_eval(re.sub(r'\bnan\b', 'None', calculation_object.output))
+            result = json.loads(json.dumps(raw))
         else:
             result = ""
         output = {"status": calculation_object.calculation_status, "result": result, "last_uploaded_date":last_uploaded_date, "submitter":submitter, "feature": calculation_object.features, "spatial_data": calculation_object.spatial_data }
@@ -717,25 +806,49 @@ def update_tasks(request, *args, **kwargs):
     else:
         raise ValidationError('User is not authenticated') 
 
+
+
 @csrf_exempt
 def load_bfrs_status(request, *args, **kwargs):
     if request.user.is_authenticated:
         # Get the latest entry for each unique bfrs
         latest_entries = SpatialDataCalculation.objects.all().values('bfrs').annotate(latest_id=Max('id'))
-
-        # Extract the IDs of the latest entries
         latest_ids = [entry['latest_id'] for entry in latest_entries]
 
-        # Filter the queryset with the latest entries and the required statuses
-        bfrs_in_queue = SpatialDataCalculation.objects.filter(
-            Q(id__in=latest_ids) &
-            (Q(calculation_status=SpatialDataCalculation.CALCULATION_STATUS[0][0]) | 
+        # Common status filter
+        status_filter = (
+            Q(calculation_status=SpatialDataCalculation.CALCULATION_STATUS[0][0]) | 
             Q(calculation_status=SpatialDataCalculation.CALCULATION_STATUS[1][0]) |
             Q(calculation_status=SpatialDataCalculation.CALCULATION_STATUS[2][0]) |
-            Q(calculation_status=SpatialDataCalculation.CALCULATION_STATUS[3][0]))
+            Q(calculation_status=SpatialDataCalculation.CALCULATION_STATUS[3][0])
+        )
+
+        # Filter the main queryset
+        bfrs_in_queue = SpatialDataCalculation.objects.filter(
+            Q(id__in=latest_ids) & status_filter
         ).exclude(bfrs__icontains="new bushfire")
 
-        bfrs_list = [{'bfrs': obj.bfrs, 'feature': obj.features, 'tasks': obj.tasks, 'spatial_data': obj.spatial_data} for obj in bfrs_in_queue]
+        # Filter 'New Bushfire' entries for the current user in the last 24 hours with same status conditions
+        twenty_four_hours_ago = timezone.now() - timedelta(hours=24)
+        new_bushfires = SpatialDataCalculation.objects.filter(
+            bfrs__istartswith="New Bushfire",
+            user=request.user,
+            created__gte=twenty_four_hours_ago
+        ).filter(status_filter)
+
+        # Combine both querysets
+        combined_queryset = list(bfrs_in_queue) + list(new_bushfires)
+
+        bfrs_list = [
+            {
+                'bfrs': obj.bfrs,
+                'feature': obj.features,
+                'tasks': obj.tasks,
+                'spatial_data': obj.spatial_data
+            }
+            for obj in combined_queryset
+        ]
+
         return JsonResponse({'bfrs_list': bfrs_list})
     else:
         return JsonResponse({'status': 'error', 'message': 'User not authenticated'}, status=401)
@@ -770,4 +883,25 @@ def clear_queue(request, *args, **kwargs):
         return JsonResponse({'bfrs': bfrs})
     else:
         return JsonResponse({'status': 'error', 'message': 'User not authenticated'}, status=401)
+
+@csrf_exempt
+def command_status(request, *args, **kwargs):
+    if request.user.is_authenticated is False:
+        return JsonResponse({'status': 'error', 'message': 'User not authenticated'}, status=401)
+    # Get all successfully completed command statuses
+    completed_commands = ManagementCommandStatus.objects.filter(
+        completion_time__isnull=False
+    )
+    sss_data = {}
+    now = timezone.now()
+
+    for command_status in completed_commands:
+        time_difference = now - command_status.completion_time
+        seconds_ago = int(time_difference.total_seconds())
+        sss_data[command_status.command] = seconds_ago
+        
+    response_data = {
+        'sss': sss_data
+    }
     
+    return JsonResponse(response_data)

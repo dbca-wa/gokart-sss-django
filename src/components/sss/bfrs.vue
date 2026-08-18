@@ -389,6 +389,7 @@
         tools: [],
         fields: ['fire_number', 'name'],
         calculation_result: null,
+        progressRequestCount: 0,
         //sorted fields list (column,true?ascend:descend)
         sortedFields: [['fire_detected_or_created', false]],
         drawings: new ol.Collection(),
@@ -888,7 +889,7 @@
         }
       },
       isFireboundaryDrawable: function(bushfire) {
-        return bushfire.get('status') === "new" || (bushfire.get('report_status') === 1)
+        return bushfire.get('status') === "new" || (bushfire.get('report_status') === 1) || (bushfire.get('report_status') === 2)
       },
       isEditable: function(bushfire) {
         try{
@@ -928,10 +929,10 @@
         return this.revision && bushfire.get('status') !== "new" && this.isEditable(bushfire) && bushfire.get('tint') !== "modified"
       },
       canUpload: function(bushfire) {
-        return this.revision && this.isModifiable(bushfire)
+        return this.revision && bushfire.get('status') !== "new" && this.isModifiable(bushfire)
       },
       canModify: function(bushfire) {
-        return this.revision && this.isModifiable(bushfire)
+        return this.revision && bushfire.get('status') !== "new" && this.isFireboundaryDrawable(bushfire) && this.isModifiable(bushfire)
       },
       canReset: function(bushfire) {
         return this.revision && bushfire.get('status') !== "new" // && this.isEditable(bushfire) && bushfire.get('tint') === "modified"
@@ -1000,13 +1001,8 @@
                         originPoint = originPoint.getCoordinates()
                         if (validateType === "getSpatialData") {
                             //during saving, check agaist the fire boundary
-                            if (getLayerId(vm.env.bushfireFinalFireBoundaryLatestLayer).startsWith("kaartdijin-boodja-private")){
-                                    url = vm.env.kbService 
-                            }
-                            else {
-                                url = vm.env.kmiService
-                            }
-
+                            const layer_id = getLayerId(vm.env.bushfireFinalFireBoundaryLatestLayer);
+                            url = getLayerUrl(layer_id, vm.env);
                             $.ajax({
                                 url:url + "/wfs?service=wfs&version=2.0&request=GetPropertyValue&valueReference=fire_number&typeNames=" + getLayerId(vm.env.bushfireFinalFireBoundaryLatestLayer) + "&cql_filter=(fire_number='" + feat.get('fire_number') + "')and (CONTAINS(fire_boundary,POINT(" + originPoint[1]  + " " + originPoint[0] + ")))",
                                 dataType:"xml",
@@ -1882,15 +1878,18 @@
                 }
 
                 if (region_task) {
+                    url_prefix = getLayerUrl(getLayerId(vm.env.regionLayer), vm.env)
+                    var geom_name = (url_prefix === vm.env.kbService) ? "SHAPE" : "wkb_geometry";
                     region_task.setStatus(utils.RUNNING)
                     $.ajax({
-                        url:vm.env.kmiService + "/wfs?service=wfs&version=2.0&request=GetFeature&typeNames=" + getLayerId("cddp:dpaw_regions") + "&outputFormat=json&cql_filter=CONTAINS(wkb_geometry,POINT(" + originPoint[1]  + " " + originPoint[0] + "))",
+                        url:url_prefix + "/wfs?service=wfs&version=2.0&request=GetFeature&typeNames=" + getLayerId(vm.env.regionLayer) + "&outputFormat=json&cql_filter=CONTAINS(" + geom_name + ",POINT(" + originPoint[1]  + " " + originPoint[0] + "))",
                         dataType:"json",
                         success: function (response, stat, xhr) {
                             if (response.totalFeatures === 0) {
                                 spatialData["region"] = null
-                            } else {
-                                spatialData["region"] = response.features[0].properties["region"]
+                            } 
+                            else {
+                                spatialData["region"] = url_prefix === vm.env.kbService ? response.features[0].properties["DRG_REGION_NAME"] : response.features[0].properties["region"];   
                             }
                             region_task.setStatus(utils.SUCCEED)
                             vm._getSpatialDataCallback(feat,caller,callback,failedCallback,spatialData)
@@ -1907,15 +1906,18 @@
                 }
 
                 if (district_task) {
+                    url_prefix = getLayerUrl(getLayerId(vm.env.districtLayer), vm.env)
+                    var geom_name = (url_prefix === vm.env.kbService) ? "SHAPE" : "wkb_geometry";
                     district_task.setStatus(utils.RUNNING)
                     $.ajax({
-                        url:vm.env.kmiService + "/wfs?service=wfs&version=2.0&request=GetFeature&typeNames=" + getLayerId("dpaw:pw_districts_fssvers") + "&outputFormat=json&cql_filter=CONTAINS(wkb_geometry,POINT(" + originPoint[1]  + " " + originPoint[0] + "))",
+                        url:url_prefix + "/wfs?service=wfs&version=2.0&request=GetFeature&typeNames=" + getLayerId(vm.env.districtLayer) + "&outputFormat=json&cql_filter=CONTAINS(" + geom_name + ",POINT(" + originPoint[1]  + " " + originPoint[0] + "))",
                         dataType:"json",
                         success: function (response, stat, xhr) {
                             if (response.totalFeatures === 0) {
                                 spatialData["district"] = null
                             } else {
-                                spatialData["district"] = response.features[0].properties["district"]
+                                spatialData["district"] = url_prefix === vm.env.kbService ? response.features[0].properties["ADMIN_ZONE"] : response.features[0].properties["district"];
+                                 
                             }
                             district_task.setStatus(utils.SUCCEED)
                             vm._getSpatialDataCallback(feat,caller,callback,failedCallback,spatialData)
@@ -2080,12 +2082,8 @@
                                         var checkTask = vm._taskManager.addTask(feat,"postsave","check_originpoint","Check origin within fire shape",utils.RUNNING)
                                     }
                                         originPoint = originPoint.getCoordinates()
-                                        if (getLayerId(vm.env.bushfireFinalFireBoundaryLatestLayer).startsWith("kaartdijin-boodja-private")){
-                                                url = vm.env.kbService 
-                                        }
-                                        else {
-                                            url = vm.env.kmiService
-                                        }
+                                        const layer_id = getLayerId(vm.env.bushfireFinalFireBoundaryLatestLayer);
+                                        url = getLayerUrl(layer_id, vm.env);
 
                                         $.ajax({
                                         url:url + "/wfs?service=wfs&version=2.0&request=GetPropertyValue&valueReference=fire_number&typeNames=" + getLayerId(vm.env.bushfireFinalFireBoundaryLatestLayer) + "&cql_filter=(fire_number='" + feat.get('fire_number') + "')and (CONTAINS(fire_boundary,POINT(" + originPoint[1]  + " " + originPoint[0] + ")))",
@@ -2308,6 +2306,7 @@
           console.log("BFRS retrieveFeatures");
           console.log(features);
           if(feat.get('status') === 'in_queue' && feat.get('original_status') === 'new'){
+            vm.target_feature = feat
             var clear_queue = vm.clearQueue(withConfirm=true)
                 if(!clear_queue){
                     return
@@ -2452,7 +2451,12 @@
                 if (!this.isFireboundaryDrawable(feature)) {
                     feature.set("fire_boundary", new ol.geom.Polygon(fire_boundary.coordinates).getExtent(), true)
                 } else {
-                    geometries.push(new ol.geom.MultiPolygon(fire_boundary.coordinates))
+                    var fbCoords = fire_boundary.coordinates
+                    geometries.push(
+                        fire_boundary.type === 'MultiPolygon'
+                            ? new ol.geom.MultiPolygon(fbCoords)
+                            : new ol.geom.MultiPolygon([fbCoords])
+                    )
                     feature.unset("fire_boundary", true)
                 }
             } else {
@@ -2711,13 +2715,18 @@
         },
 
     showProgress: function(targetFeature, caller) {
-        caller = caller || "showprogress"
+        caller = caller || "showprogress";
         var vm = this;
         var spatial_data = null;
+
+        if(caller !== 'updateBfrsUploadProgress'){
+            vm.progressRequestCount = 0;
+        }
 
         if (targetFeature && targetFeature.spatial_data) {
             spatial_data = targetFeature.spatial_data;
         }
+        
 
         var tasks = vm.featureTasks(targetFeature);
         var tenure_area_task = tasks.find(task => task.taskId === 'tenure_area');
@@ -2830,14 +2839,18 @@
                     }
 
                     vm.feature_tasks = vm.featureTasks(vm.target_feature);
-                    if(tenure_area_task.status === 2){ //if the task is still running 
-                        setTimeout(vm.updateBfrsUploadProgress, 5000);
+
+                    if (tenure_area_task.status === 2) {
+                        let delay = vm.progressRequestCount === 0 ? 500 : 5000;
+                        setTimeout(vm.updateBfrsUploadProgress, delay);
                     }
                     setTimeout(() => vm.updateTasks(vm.target_feature), 5000);
+                    vm.progressRequestCount++;
 
                 },
                 error: function(xhr, status, message) {
                     alert(xhr.status + " : " + (xhr.responseText || message));
+                    vm.progressRequestCount++;
                     setTimeout(vm.updateBfrsUploadProgress, 5000);
                 },
                 xhrFields: {
@@ -3893,76 +3906,135 @@
         })
       },
       loadBfrsStatus: function(features) {
-        vm = this;
-        if (features.getLength() > 0) {
-            $.ajax({
-                url: "/api/load_bfrs_status.json",
-                method: "GET",
-                dataType: "json",
-                success: (response, stat, xhr) => {
-                    if (response.bfrs_list && response.bfrs_list.length > 0) {
-                        let bfrsList = response.bfrs_list;
+            var vm = this;
+            if (features.getLength() > 0) {
+                $.ajax({
+                    url: "/api/load_bfrs_status.json",
+                    method: "GET",
+                    dataType: "json",
+                    success: (response, stat, xhr) => {
+                        if (response.bfrs_list && response.bfrs_list.length > 0) {
+                            let bfrsList = response.bfrs_list;
 
-                        for (let i = 0; i < vm.features.getLength(); i++) {
-                            let feature = vm.features.getArray()[i];
-                            let fireNumber = feature.get("fire_number");
+                            bfrsList.forEach(bfrsItem => {
+                                let fireNumber = bfrsItem.bfrs;
+                                
+                                // Check if feature already exists
+                                let existingFeature = vm.features.getArray().find(f => f.get("fire_number") === fireNumber);
 
-                            // Find the matching target feature
-                            let matchingBfrs = bfrsList.find(bfrsItem => bfrsItem.bfrs === fireNumber);
-
-                            if (matchingBfrs) {
-                                // Change the status to in_queue
-                                var imported_feature = this.$root.geojson.readFeatures(matchingBfrs.feature)[0];
-                                feature.set("original_status", imported_feature.get("status"))
-                                feature.set("status", "in_queue");
-                                var target_feature = vm.featurelist.find(f => f.get('fire_number') === fireNumber);
-                                target_feature.imported_feature = imported_feature;
-                                if (matchingBfrs.tasks) {
-                                    var tasks = JSON.parse(matchingBfrs.tasks);
-                                    target_feature.spatial_data = JSON.parse(matchingBfrs.spatial_data);
-                                    var allTasks = this.featureTasks(target_feature);
-                                    if (!allTasks || allTasks.length === 0){
-                                        this._taskManager.initTasks(target_feature);
+                                if (fireNumber.startsWith("New bushfire") && !existingFeature) {
+                                    // Create new feature
+                                    var imported_feature = this.$root.geojson.readFeatures(bfrsItem.feature)[0];
+                                    
+                                    if (!imported_feature) {
+                                        console.log("No feature found in the imported data for fire number: " + fireNumber);
+                                        return; 
                                     }
-                                    tasks.forEach(task => {
-                                        var progress = null;
-                                        if (task.status === -1) {
-                                            progress = utils.FAILED;
-                                        } else if (task.status === -2) {
-                                            progress = utils.FAIL_CONFIRMED;
-                                        } else if (task.status === 1) {
-                                            progress = utils.WAITING;
-                                        } else if (task.status === 2) {
-                                            progress = utils.RUNNING;
-                                        } else if (task.status === 3) {
-                                            progress = utils.SUCCEED;
-                                        } else if (task.status === 4) {
-                                            progress = utils.WARNING;
-                                        } else if (task.status === 5) {
-                                            progress = utils.IGNORED;
-                                        } else if (task.status === 6) {
-                                            progress = utils.MERGED;
+                                    imported_feature = vm.newFeature(imported_feature)
+                                    imported_feature.set("fire_number", fireNumber);
+                                    imported_feature.set("status", "in_queue");
+                                    imported_feature.set("original_status", "new");
+
+                                    var target_feature = imported_feature;
+                                    target_feature.imported_feature = imported_feature;
+
+                                    if (bfrsItem.tasks) {
+                                        var tasks = JSON.parse(bfrsItem.tasks);
+                                        target_feature.spatial_data = JSON.parse(bfrsItem.spatial_data);
+                                        var allTasks = this.featureTasks(target_feature);
+                                        if (!allTasks || allTasks.length === 0){
+                                            this._taskManager.initTasks(target_feature);
                                         }
-                                        
-                                        var taskCheck = allTasks && allTasks.find(targetTask => targetTask.taskId === task.taskId);
-                                        if (!taskCheck) {
-                                            var newTask = this._taskManager.addTask(target_feature, task.scope, task.taskId, task.description, progress);
-                                            if(task.status === -1){
-                                                newTask.setStatus(utils.FAILED,task.message)
+                                        tasks.forEach(task => {
+                                            var progress = null;
+                                            if (task.status === -1) {
+                                                progress = utils.FAILED;
+                                            } else if (task.status === -2) {
+                                                progress = utils.FAIL_CONFIRMED;
+                                            } else if (task.status === 1) {
+                                                progress = utils.WAITING;
+                                            } else if (task.status === 2) {
+                                                progress = utils.RUNNING;
+                                            } else if (task.status === 3) {
+                                                progress = utils.SUCCEED;
+                                            } else if (task.status === 4) {
+                                                progress = utils.WARNING;
+                                            } else if (task.status === 5) {
+                                                progress = utils.IGNORED;
+                                            } else if (task.status === 6) {
+                                                progress = utils.MERGED;
                                             }
+
+                                            var taskCheck = allTasks && allTasks.find(targetTask => targetTask.taskId === task.taskId);
+                                            if (!taskCheck) {
+                                                var newTask = this._taskManager.addTask(target_feature, task.scope, task.taskId, task.description, progress);
+                                                if(task.status === -1){
+                                                    newTask.setStatus(utils.FAILED, task.message);
+                                                }
+                                            }
+                                        });
+                                    }
+                                    
+
+                                } else if (existingFeature) {
+                                    // Existing feature
+                                    var imported_feature = this.$root.geojson.readFeatures(bfrsItem.feature)[0];
+                                    if (!imported_feature) {
+                                        console.log("No feature found in the imported data for fire number: " + fireNumber);
+                                        return; 
+                                    }
+                                    existingFeature.set("original_status", imported_feature.get("status"));
+                                    existingFeature.set("status", "in_queue");
+
+                                    var target_feature = vm.featurelist.find(f => f.get('fire_number') === fireNumber);
+                                    target_feature.imported_feature = imported_feature;
+
+                                    if (bfrsItem.tasks) {
+                                        var tasks = JSON.parse(bfrsItem.tasks);
+                                        target_feature.spatial_data = JSON.parse(bfrsItem.spatial_data);
+                                        var allTasks = this.featureTasks(target_feature);
+                                        if (!allTasks || allTasks.length === 0){
+                                            this._taskManager.initTasks(target_feature);
                                         }
-                                    });
+                                        tasks.forEach(task => {
+                                            var progress = null;
+                                            if (task.status === -1) {
+                                                progress = utils.FAILED;
+                                            } else if (task.status === -2) {
+                                                progress = utils.FAIL_CONFIRMED;
+                                            } else if (task.status === 1) {
+                                                progress = utils.WAITING;
+                                            } else if (task.status === 2) {
+                                                progress = utils.RUNNING;
+                                            } else if (task.status === 3) {
+                                                progress = utils.SUCCEED;
+                                            } else if (task.status === 4) {
+                                                progress = utils.WARNING;
+                                            } else if (task.status === 5) {
+                                                progress = utils.IGNORED;
+                                            } else if (task.status === 6) {
+                                                progress = utils.MERGED;
+                                            }
+
+                                            var taskCheck = allTasks && allTasks.find(targetTask => targetTask.taskId === task.taskId);
+                                            if (!taskCheck) {
+                                                var newTask = this._taskManager.addTask(target_feature, task.scope, task.taskId, task.description, progress);
+                                                if(task.status === -1){
+                                                    newTask.setStatus(utils.FAILED, task.message);
+                                                }
+                                            }
+                                        });
+                                    }
                                 }
-                            }
+                            });
                         }
-                    }
-                },
-                error: function (xhr, status, message) {
-                    console.log("Error in loading Bfrs status");
-                },
-            });
-        }
-    },
+                    },
+                    error: function (xhr, status, message) {
+                        console.log("Error in loading Bfrs status");
+                    },
+                });
+            }
+        },
     
       setup: function() {
         var vm = this

@@ -9,6 +9,8 @@ node_modules/
 .pytest_cache/
 cache/
 data/
+session_store/
+spatial_tile_cache/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -108,4 +110,8 @@ npm locks
 git_history_recent
 
 *.csv
+
+# BoM data files (downloaded at runtime)
+bom_data/
+adfd/
 *.xls*

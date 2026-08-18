@@ -3,8 +3,22 @@ from django.db import models
 from django.core.cache import cache
 from django.utils import timezone
 from django.contrib.auth.models import User
+from django.core.files.storage import FileSystemStorage
+from django.conf import settings
+import os
 
 UserModel = auth.get_user_model()
+
+private_storage = FileSystemStorage(
+    location=settings.PRIVATE_MEDIA_STORAGE_LOCATION,
+    base_url=settings.PRIVATE_MEDIA_BASE_URL,
+)
+
+
+def legend_upload_path(instance, filename):
+    return os.path.join("legend_files", filename)
+
+
 
 DISTRICT_CHOICES = (
     ('PHS', "Perth Hills"),
@@ -109,6 +123,22 @@ class BomSyncList(models.Model):
             return f"{self.file_name}"
 
 
+class ManagementCommandStatus(models.Model):
+
+    command = models.CharField(max_length=255, null=True, blank=True)
+    completion_time = models.DateTimeField(null=True, blank=True)
+    duration = models.IntegerField(null=True, blank=True)
+
+    class Meta:
+        app_label = 'sss'
+        verbose_name = "Management Command Status"
+        verbose_name_plural = "Management Command Status"
+        ordering = ['-completion_time']
+
+    def __str__(self):
+        return self.command
+
+
 class MapServer(models.Model):                
         name = models.CharField(max_length=500, null=True, blank=True)
         url =  models.CharField(max_length=500, null=True, blank=True)
@@ -145,7 +175,8 @@ CATALOGUE_TYPE = (
     ('TileLayer2','TileLayer2'),
     ('TileWMSLayer','TileWMSLayer'),
     ('WMSLayer','WMSLayer'),    
-    ('ImageLayer','ImageLayer')
+    ('ImageLayer','ImageLayer'),
+    ('WFSLayer','WFSLayer')
 )
 class Catalogue(models.Model):
         title =  models.CharField(max_length=500, null=True, blank=True)
@@ -160,9 +191,10 @@ class Catalogue(models.Model):
         keywords = models.CharField(max_length=500, null=True, blank=True)
         bounding_box = models.TextField(null=True, blank=True, help_text="Maps to pycsw:BoundingBox. It's a WKT geometry")
         crs = models.CharField(max_length=255, null=True, blank=True, help_text='Maps to pycsw:CRS')
-        service_type = models.CharField(max_length=10, null=True, blank=True)
-        service_type_version = models.CharField(max_length=10, null=True, blank=True)
+        service_type = models.CharField(max_length=10, null=True, blank=True, default='WMS')
+        service_type_version = models.CharField(max_length=10, null=True, blank=True, default='1.1.1')
         legend = models.CharField(max_length=500, null=True, blank=True)
+        legend_file = models.FileField(storage=private_storage, upload_to=legend_upload_path, null=True, blank=True)
         active = models.BooleanField(default=True)
         updated = models.DateTimeField(auto_now_add=True)
         created = models.DateTimeField(default=timezone.now)
@@ -233,3 +265,12 @@ class CRSSettings(models.Model):
         
     def __str__(self):
         return dict(self.CRS_CHOICES)[self.crs]
+
+class AccessGroup(models.Model):
+    group_name = models.CharField(max_length=255, unique=True)
+    access_list = models.TextField(null=True, blank=True)
+    active = models.BooleanField(default=True)
+    created = models.DateTimeField(default=timezone.now)
+
+    def __str__(self):
+        return self.group_name

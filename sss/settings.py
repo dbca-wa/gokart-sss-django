@@ -53,7 +53,7 @@ if len(GIT_COMMIT_HASH) == 0:
     if len(GIT_COMMIT_HASH) == 0:
        print ("ERROR: No git hash provided")
 
-VERSION_NO = "2.00"
+VERSION_NO = "2.01"
 
 # Application definition
 
@@ -65,7 +65,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'sss',
+    'sss.apps.SssConfig',
     'rest_framework',
     'django_cron',
     'appmonitor_client'
@@ -86,6 +86,7 @@ MIDDLEWARE = [
 ]
 
 CRON_CLASSES = [
+    'sss.cron.PurgeSpatialCache',
     "sss.cron.FetchCatalogueDataCronJob",
     "sss.cron.FetchBfrsRegionDataCronJob",
     "sss.cron.SyncBOMDataCronJob",
@@ -223,6 +224,8 @@ BUSHFIRE_FINAL_FIREBOUNDARY_LATEST_LAYER=decouple.config("BUSHFIRE_FINAL_FIREBOU
 BUSHFIRE_FIREBOUNDARY_LATEST_LAYER=decouple.config("BUSHFIRE_FIREBOUNDARY_LATEST_LAYER", default="dpaw:bushfire_fireboundary_latest")
 BUSHFIRE_LAYER=decouple.config("BUSHFIRE_LAYER", default="dpaw:bushfire")
 BUSHFIRE_FIREBOUNDARY_LAYER=decouple.config("BUSHFIRE_FIREBOUNDARY_LAYER", default="dpaw:bushfire_fireboundary")
+REGION_LAYER=decouple.config("REGION_LAYER", default="cddp:dpaw_regions")
+DISTRICT_LAYER=decouple.config("DISTRICT_LAYER", default="dpaw:pw_districts_fssvers")
 RESOURCE_TRACKING_LIVE_LAYER=decouple.config("RESOURCE_TRACKING_LIVE_LAYER", default="dpaw:resource_tracking_live")
 RESOURCE_TRACKING_HISTORY_LAYER=decouple.config("RESOURCE_TRACKING_HISTORY_LAYER", default="dpaw:resource_tracking_history")
 
@@ -245,11 +248,15 @@ BOM_FTP_SERVER = decouple.config("BOM_FTP_SERVER", default="")
 BOM_FTP_USERNAME = decouple.config("BOM_FTP_USERNAME", default="")
 BOM_FTP_PASSWORD = decouple.config("BOM_FTP_PASSWORD", default="")
 BOM_FTP_DIRECTORY = decouple.config("BOM_FTP_DIRECTORY", default="")
+BOM_SYNC_FOLDER = decouple.config("BOM_FTP_DIRECTORY", default="/tmp/sss_bom_sync/")
 
 TEMP_DIR = decouple.config("TEMP_DIR", default="tmp")
 
 PERTH_TIMEZONE = datetime.datetime.now(pytz.timezone('Australia/Perth')).tzinfo
-
+SPATIAL_TILE_CACHE_DIR = decouple.config("SPATIAL_TILE_CACHE_DIR", default="./spatial_tile_cache")
+PRIVATE_MEDIA_DIR_NAME = decouple.config('PRIVATE_MEDIA_DIR_NAME', 'private-media')
+PRIVATE_MEDIA_STORAGE_LOCATION = os.path.join(BASE_DIR, PRIVATE_MEDIA_DIR_NAME)
+PRIVATE_MEDIA_BASE_URL = f'/{PRIVATE_MEDIA_DIR_NAME}/'
 # Django Timezone
 TIME_ZONE = 'Australia/Perth'
 USE_TZ = True
@@ -260,9 +267,74 @@ CACHES = {
     'default': {
         'BACKEND': 'django.core.cache.backends.filebased.FileBasedCache',
         'LOCATION': os.path.join(BASE_DIR, 'sss', 'cache'),
-        "OPTIONS": {"MAX_ENTRIES": 20000},
+        "OPTIONS": {"MAX_ENTRIES": 50000,
+                   'CULL_FREQUENCY': 3
+                   },
     }
 }
 ENV_TYPE=decouple.config("ENV_TYPE", default="DEV")
 ENABLE_AUTH2_GROUPS=True
 FILE_UPLOAD_PERMISSIONS = None
+SESSION_ENGINE = 'django.contrib.sessions.backends.file'
+SESSION_FILE_PATH = decouple.config('SESSION_FILE_PATH', default='/app/session_store/')
+
+PATH_TO_LOGS = os.path.join(BASE_DIR, 'logs')
+if not os.path.exists(PATH_TO_LOGS):
+    os.mkdir(PATH_TO_LOGS)
+LOG_FILE_NAME = 'kaartdijin_boodja.log'
+LOG_FILE_PATH = os.path.join(BASE_DIR, 'logs', LOG_FILE_NAME)
+
+# Logging Configuration
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "verbose": {
+            "format": "%(levelname)s %(asctime)s %(module)s %(message)s",
+        },
+    },
+    "handlers": {
+        "console": {
+            "level": decouple.config("LOG_CONSOLE_LEVEL", default="INFO"),
+            "class": "logging.StreamHandler",
+            "formatter": "verbose",
+        },
+        "file": {
+            "level": "INFO",
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": os.path.join(BASE_DIR, "logs", "sss.log"),
+            "formatter": "verbose",
+            "maxBytes": 5242880,
+        },
+        "file_cron_tasks": {
+            "level": "INFO",
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": os.path.join(BASE_DIR, "logs", "cron_tasks.log"),
+            "formatter": "verbose",
+            "maxBytes": 5242880,
+        },
+    },
+    "loggers": {
+        "": {
+            "handlers": ["file", "console"],
+            "level": decouple.config("LOG_CONSOLE_LEVEL", default="WARNING"),
+            "propagate": True,
+        },
+        "django": {
+            "handlers": ["file"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "log": {
+            "handlers": ["file"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "cron_tasks": {
+            "handlers": ["file_cron_tasks", "console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+       },
+}
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
