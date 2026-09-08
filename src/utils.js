@@ -117,10 +117,10 @@ FeatureTaskManager.prototype.getTask = function(feat,scope,taskId) {
 }
 //status should be "waiting","running","succeed","failed"
 FeatureTaskManager.prototype.addTask = function(feat,scope,taskId,description,status) {
-    if (this.changeCallback) this.changeCallback()
     var task = new FeatureTask(this,scope,taskId,description,status)
         
     feat.tasks.push(task)
+    if (this.changeCallback) this.changeCallback()
     return task
 }
 
