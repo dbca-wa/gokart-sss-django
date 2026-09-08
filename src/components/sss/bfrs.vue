@@ -2071,8 +2071,12 @@
         caller = caller || "save"
         if (this.canSave(feat) || caller === 'capturemethod') {
             var vm = this
-            if(!vm.target_feature || !feat.tasks){
-                vm.target_feature = vm.featurelist.find(f => f.get('fire_number') === feat.get('fire_number'));
+            if (caller !== 'showprogress' && caller !== 'capturemethod') {
+                vm.target_feature = vm.featurelist.find(f => f.get('fire_number') === feat.get('fire_number')) ||
+                    vm.features.getArray().find(f => f.get('fire_number') === feat.get('fire_number')) || feat;
+            } else if(!vm.target_feature || !feat.tasks){
+                vm.target_feature = vm.featurelist.find(f => f.get('fire_number') === feat.get('fire_number')) ||
+                    vm.features.getArray().find(f => f.get('fire_number') === feat.get('fire_number')) || feat;
             }
             var tasks = vm.featureTasks(vm.target_feature);
             
@@ -2090,13 +2094,13 @@
             if (!callback && !vm._taskManager.initTasks(feat)) {
                 return
             }
-            if (caller === 'showprogress' || caller === "capturemethod") {
-                var task = tasks.find(task => task.taskId === 'save');
-            } else {
-                var task = tasks.find(task => task.taskId === 'save');
-                if(!task){
-                    var task = vm._taskManager.addTask(feat, "save", "save", "Save spatial data", utils.RUNNING);
-                }
+            var task = tasks.find(task => task.taskId === 'save');
+            if (!task) {
+                //'save' task can be missing when this flow was entered via the background
+                //processing/capturemethod path (e.g. origin-point-only edits) rather than the
+                //user pressing "Save" first. Without it, task.setStatus() below would throw and
+                //silently abort the completion chain, leaving the bushfire stuck as "Processing Finalised".
+                var task = vm._taskManager.addTask(feat, "save", "save", "Save spatial data", utils.RUNNING);
             }
             if ((!vm.taskDialog || !vm.taskDialog.isActive) && caller !== 'showprogress') {
                 vm.showProgress(feat);
@@ -4066,7 +4070,10 @@
                                     existingFeature.set("original_status", imported_feature.get("status"));
                                     existingFeature.set("status", "in_queue");
 
-                                    var target_feature = vm.featurelist.find(f => f.get('fire_number') === fireNumber);
+                                    var target_feature = vm.featurelist.find(f => f.get('fire_number') === fireNumber) || existingFeature;
+                                    if (!target_feature) {
+                                        return;
+                                    }
                                     target_feature.imported_feature = imported_feature;
 
                                     if (bfrsItem.tasks) {
