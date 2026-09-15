@@ -22,6 +22,7 @@ RUN apt-get install --no-install-recommends -y libpq-dev patch libreoffice virtu
 RUN apt-get install --no-install-recommends -y postgresql-client mtr htop vim  sudo
 RUN apt-get install --no-install-recommends -y bzip2 pdftk unzip
 RUN apt-get install --no-install-recommends -y software-properties-common
+RUN apt-get install --no-install-recommends -y run-one
 RUN ln -s /usr/bin/python3 /usr/bin/python
 
 # Install GDAL
