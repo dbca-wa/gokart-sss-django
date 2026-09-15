@@ -9,4 +9,4 @@
 
 */2 * * * * python /app/manage.py runcrons >> /app/logs/cronjob.log 2>&1
 1 0 * * *  /bin/log_rotate.sh  >> /app/logs/log_rotate.log 2>&1
-0 */1 * * * run-one python manage_ml.py clearsessions >> logs/clearsessions.log 2>&1
+0 */1 * * * run-one python manage.py clearsessions >> logs/clearsessions.log 2>&1
