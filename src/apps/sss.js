@@ -542,7 +542,6 @@ if (result) {
             }
           }, {
             type: 'TileLayer',
-            name: 'State Map Base',
             id: env.stateMapLayer,
             base: true
           },
