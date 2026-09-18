@@ -500,7 +500,8 @@
       },
       regions: function() {
         try{
-            return this.profileRevision && this.whoami["bushfire"]["regions"]
+            var regions = this.profileRevision && this.whoami["bushfire"]["regions"]
+            return Array.isArray(regions)?regions:[]
         }catch(ex) {
             return []
         }
@@ -511,7 +512,7 @@
         if (this.region) {
             r = this.regions.find(function(o) { return o.region_id === parseInt(vm.region)})
         }
-        return r?r.districts:[]
+                return r && Array.isArray(r.districts)?r.districts:[]
       },
       bushfireStyleFunc: function() {
 
@@ -1202,6 +1203,7 @@
             if (vm._taskManager.allTasksSucceed(feat,"getSpatialData")) {
                 if(!spatialData){ //in case spatial_data is lost, reload the spatial data from the backend again
                     vm.showProgress(vm.target_feature, 'updateBfrsUploadProgress')
+                    return
                 }
                 if ("region" in spatialData && "district" in spatialData) {
                     var region = null
@@ -1213,7 +1215,7 @@
                     delete spatialData["region"]
                     if (name) {
                         name = name.toLowerCase()
-                        region = vm.whoami.bushfire.regions.find(function(o) {return o.region.toLowerCase() === name})
+                        region = vm.regions.find(function(o) {return o.region.toLowerCase() === name})
                         if (region) {
                             spatialData["region_id"] = region.region_id
                         } else {
