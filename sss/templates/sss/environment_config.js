@@ -26,6 +26,7 @@ var env = {
     weatherForecastUser:"{{ settings.WEATHERFORECAST_USER }}",
     weatherForecastPassword:"{{ settings.WEATHERFORECAST_PASSWORD }}",
     resourceTrackingLiveLayer:"{{ settings.RESOURCE_TRACKING_LIVE_LAYER }}",
+    stateMapLayer:"{{ settings.STATEMAP_LAYER }}",
     resourceTrackingHistoryLayer:"{{ settings.RESOURCE_TRACKING_HISTORY_LAYER }}",
     appMapping:{
     },
