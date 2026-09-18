@@ -259,7 +259,7 @@
             </button>
             <div class="small-12 expanded button-group" style="justify-content: center;">
                 <a title="Clear" class="button" style="flex: 0 0 auto; width: auto; margin: 0 4.165%; margin-top:10px" @click="clearQueue(withConfirm=true)" :disabled="clearButtonDisabled">Return to Edit Mode</a>
-                <a title="Complete" class="button" style="flex: 0 0 auto; width: auto; margin: 0 4.165%; margin-top:10px" @click="captureMethods()" :disabled="completeButtonDisabled">Complete</a>
+                <a title="Complete" class="button" style="flex: 0 0 auto; width: auto; margin: 0 4.165%; margin-top:10px" @click="captureMethods()" :disabled="completeButtonDisabled || !hasSpatialData">Complete</a>
             </div>
             </div>
             </div>
@@ -369,7 +369,7 @@
 }
 </style>
 <script>
-  import { ol, $, moment, hash, turf, utils } from 'src/vendor.js'
+    import { ol, $, Vue, moment, hash, turf, utils } from 'src/vendor.js'
   export default {
     store: {
         bushfireLabels: 'settings.bfrs.bushfireLabels',
@@ -403,6 +403,7 @@
         fields: ['fire_number', 'name'],
         calculation_result: null,
         progressRequestCount: 0,
+        progressRequestPending: false,
         isFeatureListLoading: true,
         //sorted fields list (column,true?ascend:descend)
         sortedFields: [['fire_detected_or_created', false]],
@@ -591,9 +592,20 @@
       },
       hasFeatureFilter: function () {
         return (this.search && this.search.trim())?true:false
+            },
+            hasSpatialData: function () {
+                return !!(this.target_feature && this.target_feature.spatial_data)
       }
     },
     watch: {
+            hasSpatialData:function(hasSpatialData) {
+                if (!hasSpatialData && this.calculation_status === 'calculation_completed' &&
+                        this.target_feature && this.target_feature.get('status') === 'in_queue' &&
+                        this.taskDialog && this.taskDialog.isActive) {
+                    this.completeButtonDisabled = true
+                    this.updateBfrsUploadProgress()
+                }
+            },
       isReportMapLayerHidden:function(newValue,oldValue) {
         if (newValue === undefined || oldValue === undefined) {
             //layer is turned on or turned off
@@ -1188,7 +1200,7 @@
         failedCallback = failedCallback || this._defaultFailedCallback
         vm._getSpatialDataCallback = vm._getSpatialDataCallback || function(feat,caller,callback,failedCallback,spatialData) {
             if (spatialData && vm.target_feature && (caller === 'import' || caller === 'save' || caller === 'create')) {
-                vm.target_feature.spatial_data = spatialData;
+                Vue.set(vm.target_feature, 'spatial_data', spatialData);
             }
             if(vm.target_feature.spatial_data){
                 spatialData = vm.target_feature.spatial_data
@@ -1202,6 +1214,7 @@
             }
             if (vm._taskManager.allTasksSucceed(feat,"getSpatialData")) {
                 if(!spatialData){ //in case spatial_data is lost, reload the spatial data from the backend again
+                    vm.completeButtonDisabled = true
                     vm.showProgress(vm.target_feature, 'updateBfrsUploadProgress')
                     return
                 }
@@ -1262,11 +1275,11 @@
                         callback(spatialData)
                     }
                     else{
-                        vm.target_feature.spatial_data = spatialData
+                        Vue.set(vm.target_feature, 'spatial_data', spatialData)
                     }     
                 }
                 else if (caller === "save" && spatialData["fire_boundary"]) {
-                    vm.target_feature.spatial_data = spatialData
+                    Vue.set(vm.target_feature, 'spatial_data', spatialData)
                 }
                 else if (caller === "capturemethod" && vm.target_feature.spatial_data && vm.target_feature.spatial_data["fire_boundary"]) {
                     var spatialData = vm.target_feature.spatial_data
@@ -2826,7 +2839,9 @@
             if(!vm.taskDialog.isActive){
                 vm.taskDialog.open();
             }
-        } else if(targetFeature.get('status') === 'in_queue') { 
+        } else if(targetFeature.get('status') === 'in_queue') {
+            if (vm.progressRequestPending) return
+            vm.progressRequestPending = true
             vm.clearButtonDisabled = false;
             $.ajax({
                 url: "/api/spatial_calculation_progress.json",
@@ -2838,10 +2853,12 @@
                     spatial_data: JSON.stringify(spatial_data)
                 },
                 success: (response, stat, xhr) => {
+                    vm.progressRequestPending = false;
                     var output = response['result'];
                     var status = response['status'];
                     var imp_feature = response['feature'];
-                    var spatial_data = response['spatial_data'];          
+                    var spatial_data = response['spatial_data'];
+                    var retryForSpatialData = false;
 
                     vm.target_feature = targetFeature;
                     var tasks = vm.featureTasks(targetFeature);
@@ -2856,7 +2873,7 @@
                     vm.submitter = response['submitter'];
                     vm.completeButtonDisabled = true;
 
-                    if (tenure_area_task && tenure_area_task.status === 3) {
+                    if (tenure_area_task && tenure_area_task.status === 3 && targetFeature.spatial_data) {
                         vm.completeButtonDisabled = false;
                     }
 
@@ -2889,7 +2906,18 @@
                     if (status === "Processing Finalised") {
                         vm.calculation_status = 'calculation_completed';
                         if([1, 2, 3].includes(tenure_area_task.status)){
-                            vm.target_feature.spatial_data = JSON.parse(spatial_data);
+                            var parsedSpatialData = null;
+                            try {
+                                parsedSpatialData = typeof spatial_data === "string" ? JSON.parse(spatial_data) : spatial_data;
+                            } catch (ex) {
+                                parsedSpatialData = null;
+                            }
+
+                            if (!parsedSpatialData || Object.keys(parsedSpatialData).length === 0) {
+                                vm.completeButtonDisabled = true;
+                                retryForSpatialData = true;
+                            } else {
+                            Vue.set(vm.target_feature, 'spatial_data', parsedSpatialData);
                             tenure_area_task.setStatus(utils.SUCCEED);
 
                             var tasks = vm.featureTasks(targetFeature);
@@ -2917,12 +2945,13 @@
                                 vm.calculation_result = output;
                                 vm.saveFeature(targetFeature.imported_feature, "showprogress", () => {});
                             }
+                            }
                         }
                     }
 
                     vm.feature_tasks = vm.featureTasks(vm.target_feature);
 
-                    if (tenure_area_task.status === 2) {
+                    if (tenure_area_task.status === 2 || retryForSpatialData) {
                         let delay = vm.progressRequestCount === 0 ? 500 : 5000;
                         setTimeout(vm.updateBfrsUploadProgress, delay);
                     }
@@ -2931,6 +2960,7 @@
 
                 },
                 error: function(xhr, status, message) {
+                    vm.progressRequestPending = false;
                     alert(xhr.status + " : " + (xhr.responseText || message));
                     vm.progressRequestCount++;
                     setTimeout(vm.updateBfrsUploadProgress, 5000);
@@ -2943,7 +2973,8 @@
     },
    
     captureMethods() {
-        if (this.completeButtonDisabled) {
+        if (this.completeButtonDisabled || !this.target_feature || !this.target_feature.spatial_data) {
+            this.completeButtonDisabled = true;
             return;
         }
         selectedFeatures = []
@@ -4026,7 +4057,7 @@
 
                                     if (bfrsItem.tasks) {
                                         var tasks = JSON.parse(bfrsItem.tasks);
-                                        target_feature.spatial_data = JSON.parse(bfrsItem.spatial_data);
+                                        Vue.set(target_feature, 'spatial_data', JSON.parse(bfrsItem.spatial_data));
                                         var allTasks = this.featureTasks(target_feature);
                                         if (!allTasks || allTasks.length === 0){
                                             this._taskManager.initTasks(target_feature);
@@ -4080,7 +4111,7 @@
 
                                     if (bfrsItem.tasks) {
                                         var tasks = JSON.parse(bfrsItem.tasks);
-                                        target_feature.spatial_data = JSON.parse(bfrsItem.spatial_data);
+                                        Vue.set(target_feature, 'spatial_data', JSON.parse(bfrsItem.spatial_data));
                                         var allTasks = this.featureTasks(target_feature);
                                         if (!allTasks || allTasks.length === 0){
                                             this._taskManager.initTasks(target_feature);
