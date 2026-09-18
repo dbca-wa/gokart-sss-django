@@ -157,7 +157,7 @@ var persistentData = {
   // id followed by properties to merge into catalogue
   activeLayers: [
     [env.resourceTrackingLiveLayer, {}],
-    [env.statemapLayer, {}]
+    [env.stateMapLayer, {}]
   ],
   // blank annotations
   annotations: {
