@@ -190,7 +190,10 @@ if (result) {
           delete store["activeLayers"]
       }
       var storedData = utils.extend(JSON.parse(JSON.stringify(persistentData)), store || {}, volatileData)
-      storedData['activeLayers'] = storedData['activeLayers'].filter(layer => !layer[0].includes("resource_tracking_history"));
+      storedData['activeLayers'] = storedData['activeLayers'].filter(function(layer) {
+        var layerId = layer && layer[0]
+        return typeof layerId === 'string' && !layerId.includes("resource_tracking_history")
+      })
 
       // If view values are invalid (e.g. due to a mobile browser bug),
       // fall back to defaults to prevent a crash on load.
@@ -537,6 +540,11 @@ if (result) {
                     }
                 }
             }
+          }, {
+            type: 'TileLayer',
+            name: 'State Map Base',
+            id: env.stateMapLayer,
+            base: true
           },
             //base: true
          /*
