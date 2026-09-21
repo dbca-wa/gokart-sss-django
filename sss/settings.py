@@ -218,6 +218,7 @@ BOM_HOME=decouple.config("BOM_HOME", default="/var/www/bom_data/.data/")
 ENV_DOMAIN="dbca"
 CSRF_TRUSTED_ORIGINS_STRING = decouple.config("CSRF_TRUSTED_ORIGINS", default='[]')
 CSRF_TRUSTED_ORIGINS = json.loads(str(CSRF_TRUSTED_ORIGINS_STRING))
+SESSION_COOKIE_AGE = decouple.config('SESSION_COOKIE_AGE', default=3600*4, cast=int)
 
 BUSHFIRELIST_LATEST_LAYER=decouple.config("BUSHFIRELIST_LATEST_LAYER", default="dpaw:bushfirelist_latest")
 BUSHFIRE_LATEST_LAYER=decouple.config("BUSHFIRE_LATEST_LAYER", default="dpaw:bushfire_latest")
