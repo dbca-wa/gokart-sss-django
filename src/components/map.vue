@@ -1724,10 +1724,12 @@
         //       tileGrid: m
         // })
 
+        var wmsVersion = options.service_type_version || '1.1.1'
+
         var tileSource = new ol.source.TileWMS({
-          url: options.map_server_url+'/'+options.workspace+'/wms',
+          url: options.map_server_url + "/wms",
           params: { 'FORMAT': 'image/png', 
-                    'VERSION': '1.1.1',
+                    'VERSION': wmsVersion,
                     tiled: true,
                     STYLES: '',
                     LAYERS: layer_id,
