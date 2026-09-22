@@ -1727,7 +1727,7 @@
         var wmsVersion = options.service_type_version || '1.1.1'
 
         var tileSource = new ol.source.TileWMS({
-          url: options.map_server_url + "/wms",
+          url: options.map_server_url + "/gwc/service/wms",
           params: { 'FORMAT': 'image/png', 
                     'VERSION': wmsVersion,
                     tiled: true,
