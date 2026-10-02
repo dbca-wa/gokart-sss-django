@@ -15,6 +15,7 @@ from shapely.geometry.multipolygon import MultiPolygon
 from shapely.geometry.collection import GeometryCollection
 from shapely.geometry.base import BaseGeometry
 from shapely import ops
+from shapely.validation import make_valid as shapely_make_valid
 from functools import partial
 from sss.models import SpatialDataCalculation, CRSSettings
 from sss.sss_gdal import SUPPORTED_CRS
@@ -104,6 +105,30 @@ def getShapelyGeometry(feature):
         return GeometryCollection([shape(g) for g in feature["geometry"]["geometries"]])
     else:
         return shape(feature["geometry"])
+
+
+def repairGeometry(geometry):
+    if not geometry or geometry.is_valid:
+        return geometry
+
+    try:
+        repaired = shapely_make_valid(geometry)
+    except Exception:
+        repaired = geometry.buffer(0)
+
+    if repaired and not repaired.is_empty:
+        return repaired
+    return geometry
+
+
+def repairFeatureGeometry(feature):
+    geometry = getShapelyGeometry(feature)
+    if not geometry or geometry.is_valid:
+        return feature
+
+    repaired = repairGeometry(geometry)
+    feature["geometry"] = mapping(repaired)
+    return feature
 
 
 
@@ -470,7 +495,9 @@ def _calculateArea(feature,kmiserver,session_cookies,options,run_in_other_proces
 
     total_area = 0
     total_layer_area = 0
-    geometry = extractPolygons(getShapelyGeometry(feature))
+    geometry = repairGeometry(getShapelyGeometry(feature))
+    geometry = extractPolygons(geometry)
+    geometry = extractPolygons(repairGeometry(geometry))
     if not geometry :
         area_data["total_area"] = 0
         return result
@@ -882,6 +909,7 @@ def spatial(request):
         while index < len(features):
             feature = features[index]
             index += 1
+            repairFeatureGeometry(feature)
             feature_result = {}
             results.append(feature_result)
             for key,val in options.items():
