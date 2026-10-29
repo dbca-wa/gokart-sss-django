@@ -1,5 +1,5 @@
 # Prepare the base environment.
-FROM ubuntu:24.04 AS builder_base_govapp
+FROM ghcr.io/dbca-wa/docker-apps-dev:ubuntu_2604_base_python AS builder_base_govapp
 LABEL org.opencontainers.image.authors=asi@dbca.wa.gov.au
 LABEL org.opencontainers.image.source=https://github.com/dbca-wa/gokart-sss-django
 SHELL ["/bin/bash", "-c"]
@@ -17,19 +17,19 @@ ENV SITE_DOMAIN='dbca.wa.gov.au'
 RUN apt-get clean
 RUN apt-get update
 RUN apt-get upgrade -y
-RUN apt-get install --no-install-recommends -y curl wget git libmagic-dev gcc binutils libproj-dev gdal-bin python3 python3-setuptools python3-dev python3-pip tzdata cron rsyslog gunicorn
-RUN apt-get install --no-install-recommends -y libpq-dev patch libreoffice virtualenv
-RUN apt-get install --no-install-recommends -y postgresql-client mtr htop vim  sudo
+# RUN apt-get install --no-install-recommends -y curl wget git libmagic-dev gcc binutils libproj-dev gdal-bin python3 python3-setuptools python3-dev python3-pip tzdata cron rsyslog gunicorn
+# RUN apt-get install --no-install-recommends -y libpq-dev patch libreoffice virtualenv
+# RUN apt-get install --no-install-recommends -y postgresql-client mtr htop vim  sudo
 RUN apt-get install --no-install-recommends -y bzip2 pdftk unzip
-RUN apt-get install --no-install-recommends -y software-properties-common
-RUN apt-get install --no-install-recommends -y run-one
-RUN ln -s /usr/bin/python3 /usr/bin/python
+# RUN apt-get install --no-install-recommends -y software-properties-common
+# RUN apt-get install --no-install-recommends -y run-one
+# RUN ln -s /usr/bin/python3 /usr/bin/python
 
 # Install GDAL
 RUN add-apt-repository ppa:ubuntugis/ubuntugis-unstable
 RUN apt update
-RUN apt-get install --no-install-recommends -y gdal-bin python3-gdal
-RUN apt-get install --no-install-recommends -y libgdal-dev build-essential
+# RUN apt-get install --no-install-recommends -y gdal-bin python3-gdal
+# RUN apt-get install --no-install-recommends -y libgdal-dev build-essential
 
 
 # Install nodejs
@@ -111,9 +111,11 @@ RUN chmod 777 /app/tmp/
 # 2. will create profile, if it does not already exist
 #RUN mkdir /app/logs/.ipython
 #RUN export IPYTHONDIR=/app/logs/.ipython/
-
+# Cleanup
 USER root
-RUN apt purge -y linux-libc-dev
+RUN wget https://raw.githubusercontent.com/dbca-wa/wagov_utils/refs/heads/main/wagov_utils/bin/package_cleanup_2604.sh -O /tmp/package_cleanup_2604.sh
+RUN chmod 755 /tmp/package_cleanup_2604.sh
+RUN /tmp/package_cleanup_2604.sh
 USER oim
 
 EXPOSE 8080
