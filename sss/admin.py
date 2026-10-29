@@ -1,5 +1,24 @@
+from django import forms
 from django.contrib.gis import admin
 from sss import models
+
+
+class ProxyAdminForm(forms.ModelForm):
+    class Meta:
+        model = models.Proxy
+        fields = "__all__"
+        help_texts = {
+            "proxy_url": "Do not end the URL with a slash (/).",
+        }
+
+
+class MapServerAdminForm(forms.ModelForm):
+    class Meta:
+        model = models.MapServer
+        fields = "__all__"
+        help_texts = {
+            "url": "Do not end the URL with a slash (/).",
+        }
 
 
 @admin.register(models.District)
@@ -46,6 +65,7 @@ class Catalogue(admin.ModelAdmin):
     
 @admin.register(models.MapServer)
 class MapServer(admin.ModelAdmin):
+    form = MapServerAdminForm
     list_display = ('id', 'name', 'url', 'created')
     search_fields = ('id', 'name', 'url')
     readonly_fields = ['updated', 'created',]  
@@ -61,6 +81,7 @@ admin.site.register(models.Region)
 
 @admin.register(models.Proxy)
 class ProxyAdmin(admin.ModelAdmin):
+    form = ProxyAdminForm
     list_display = ("request_path", "username", "basic_auth_enabled", "active")
     search_fields = ("request_path",)
     ordering = ("request_path",)

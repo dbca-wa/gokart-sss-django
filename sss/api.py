@@ -18,9 +18,11 @@ import base64
 import datetime
 import ast
 import json
+import logging
 import pathlib
 import re
 from io import BytesIO
+from urllib.parse import urlsplit
 from sss.models import UserProfile, Proxy, MapServer, SpatialDataCalculation
 from sss import models as sss_models
 from sss.serializers import ProfileSerializer, AccountDetailsSerializer
@@ -36,6 +38,8 @@ from sss.models import ManagementCommandStatus
 from django.utils import timezone
 from datetime import timedelta
 from sss import spatial_tile_cache
+
+logger = logging.getLogger("log")
 
 def api_catalogue(request, *args, **kwargs):
     if request.user.is_authenticated:
@@ -266,6 +270,16 @@ def mapProxyView(request, request_path, path):
             auth_user = proxy.get("username")
             auth_password = proxy.get("password")
         remoteurl = proxy.get("proxy_url") +"/"+ path
+    if "//" in urlsplit(remoteurl).path:
+        logger.warning(
+            "Proxy '%s': upstream URL path contains a double slash (//), "
+            "which can cause layer loading errors. "
+            "Check Django admin > Proxies > %s > Proxy URL and remove any trailing slash (/). "
+            "Also check the Map server URL and request path for duplicate slashes. "
+            "Requests 2.34.0+ preserves duplicate leading slashes.",
+            request_path,
+            request_path,
+        )
     response = process_proxy(request, remoteurl, queryString, auth_user, auth_password)
 
     return response
