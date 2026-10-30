@@ -1,0 +1,175 @@
+# Docker
+# Build and publish multi-platform Docker images:
+#   - linux/amd64
+#   - linux/arm64
+
+trigger:
+- main
+
+resources:
+- repo: self
+
+variables:
+  tag: '$(Build.BuildId)'
+  tagDate: $[ format('{0:yyyy}.{0:MM}.{0:dd}.{0:HH}.{0:mm}{0:ss}', pipeline.startTime) ]
+  isMain: $[eq(variables['Build.SourceBranch'], 'refs/heads/main')]
+  imageName: 'ghcr.io/dbca-wa/gokart-sss-django'
+  devImageName: 'ghcr.io/dbca-wa/docker_app_dev'
+  buildPlatforms: 'linux/amd64,linux/arm64'
+  buildxBuilderName: 'gokart-multiarch-builder'
+
+stages:
+- stage: Build
+  condition: and(succeeded(), eq(variables.isMain, 'true'))
+  displayName: Build image
+
+  jobs:
+  - job: Build
+    displayName: Build
+    pool:
+      vmImage: ubuntu-latest
+
+    steps:
+    # 1. Extract the short Git SHA
+    - bash: |
+        set -euo pipefail
+
+        SHORT_SHA="$(git rev-parse --short=7 "$(Build.SourceVersion)")"
+        echo "Short Git SHA: ${SHORT_SHA}"
+        echo "##vso[task.setvariable variable=shortSha]${SHORT_SHA}"
+      displayName: 'Generate Short Git SHA'
+
+    # 2. Authenticate to GitHub Container Registry
+    - task: Docker@2
+      displayName: 'Login to GHCR'
+      inputs:
+        command: login
+        containerRegistry: DockerGitHub
+
+    # 3. Install emulation support for ARM64
+    - bash: |
+        set -euo pipefail
+
+        docker run --privileged --rm \
+          tonistiigi/binfmt:latest \
+          --install arm64
+
+        echo "Registered binary formats:"
+        ls -la /proc/sys/fs/binfmt_misc/
+      displayName: 'Enable ARM64 emulation'
+
+    # 4. Create and initialise the Docker Buildx builder
+    - bash: |
+        set -euo pipefail
+
+        # Remove a builder with the same name if one already exists.
+        docker buildx rm "$(buildxBuilderName)" >/dev/null 2>&1 || true
+
+        docker buildx create \
+          --name "$(buildxBuilderName)" \
+          --driver docker-container \
+          --use
+
+        docker buildx inspect \
+          "$(buildxBuilderName)" \
+          --bootstrap
+
+        docker buildx ls
+      displayName: 'Initialise Docker Buildx'
+
+    # 5. Build and push the main multi-platform image
+    #
+    # Buildx must push directly because a multi-platform image cannot be
+    # loaded into the local Docker image store as a single image.
+    - bash: |
+        set -euo pipefail
+
+        IMAGE_VERSION="$(tagDate)-$(shortSha)"
+
+        echo "Building main multi-platform image:"
+        echo "  Platforms: $(buildPlatforms)"
+        echo "  Latest:    $(imageName):latest"
+        echo "  Version:   $(imageName):${IMAGE_VERSION}"
+
+        docker buildx build \
+          --builder "$(buildxBuilderName)" \
+          --platform "$(buildPlatforms)" \
+          --build-arg "IMAGE_TAG=${IMAGE_VERSION}" \
+          --build-arg "IMAGE_NAME=$(imageName)" \
+          --tag "$(imageName):latest" \
+          --tag "$(imageName):${IMAGE_VERSION}" \
+          --file "$(Build.SourcesDirectory)/Dockerfile" \
+          --push \
+          "$(Build.SourcesDirectory)"
+      displayName: 'Build and Push Main AMD64 and ARM64 Image'
+
+    # 6. Build and push the development multi-platform image
+    - bash: |
+        set -euo pipefail
+
+        IMAGE_VERSION="$(tagDate)-$(shortSha)"
+        DEV_LATEST_TAG="gokart-sss-django_dev_latest"
+        DEV_VERSION_TAG="gokart-sss-django_dev_${IMAGE_VERSION}"
+
+        echo "Building development multi-platform image:"
+        echo "  Platforms: $(buildPlatforms)"
+        echo "  Latest:    $(devImageName):${DEV_LATEST_TAG}"
+        echo "  Version:   $(devImageName):${DEV_VERSION_TAG}"
+
+        docker buildx build \
+          --builder "$(buildxBuilderName)" \
+          --platform "$(buildPlatforms)" \
+          --build-arg "IMAGE_TAG=${IMAGE_VERSION}" \
+          --build-arg "IMAGE_NAME=$(devImageName)" \
+          --tag "$(devImageName):${DEV_LATEST_TAG}" \
+          --tag "$(devImageName):${DEV_VERSION_TAG}" \
+          --file "$(Build.SourcesDirectory)/dockerdev/Dockerfile" \
+          --push \
+          "$(Build.SourcesDirectory)"
+      displayName: 'Build and Push Dev AMD64 and ARM64 Image'
+
+    # 7. Verify the published images contain both architectures
+    - bash: |
+        set -euo pipefail
+
+        IMAGE_VERSION="$(tagDate)-$(shortSha)"
+        DEV_VERSION_TAG="gokart-sss-django_dev_${IMAGE_VERSION}"
+
+        echo "Main image manifest:"
+        docker buildx imagetools inspect \
+          "$(imageName):${IMAGE_VERSION}"
+
+        echo
+        echo "Development image manifest:"
+        docker buildx imagetools inspect \
+          "$(devImageName):${DEV_VERSION_TAG}"
+      displayName: 'Verify Multi-Platform Image Manifests'
+
+    # 8. Clean up the temporary Buildx builder
+    - bash: |
+        docker buildx rm "$(buildxBuilderName)" || true
+      condition: always()
+      displayName: 'Clean Up Docker Buildx Builder'
+
+
+    # 9. Purge images
+    - script: |
+        docker system prune -af
+      displayName: 'Cleanup Docker space'   
+
+    # 10. Scan image
+    - bash: |
+        mkdir -p "$(Build.ArtifactStagingDirectory)"
+        chmod 777 "$(Build.ArtifactStagingDirectory)"
+        docker run --pull always --rm -e DOCKER_IMAGE="$(imageName):$(tagDate)-$(shortSha)" -v "$(Build.ArtifactStagingDirectory):/artifacts" ghcr.io/dbca-wa/docker-apps-dev:security_scan_tools_base_latest  bash -c '
+            /app/scan_image.sh
+    
+            cp /tmp/scans/vulnerabilities.csv /artifacts/
+            cp /tmp/scans/vulnerabilities.xlsx /artifacts/
+            cp /tmp/scans/sbom.json /artifacts/
+        '
+      displayName: Run security scan
+     
+    - publish: $(Build.ArtifactStagingDirectory)
+      artifact: security-scan
+      displayName: Publish scan results             
