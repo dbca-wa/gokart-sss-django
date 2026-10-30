@@ -26,8 +26,8 @@ RUN apt-get install --no-install-recommends -y bzip2 pdftk unzip
 # RUN ln -s /usr/bin/python3 /usr/bin/python
 
 # Install GDAL
-RUN add-apt-repository ppa:ubuntugis/ubuntugis-unstable
-RUN apt update
+# RUN add-apt-repository ppa:ubuntugis/ubuntugis-unstable
+# RUN apt update
 # RUN apt-get install --no-install-recommends -y gdal-bin python3-gdal
 # RUN apt-get install --no-install-recommends -y libgdal-dev build-essential
 
