@@ -59,9 +59,7 @@ RUN chmod 755 /startup.sh && \
     chmod 755 /pre_startup.sh && \
     chmod +s /pre_startup.sh && \
     groupadd -g 5000 oim && \
-    useradd -g 5000 -u 5000 oim -s /bin/bash -d /app && \
-    usermod -a -G sudo oim && \
-    echo "oim  ALL=(ALL)  NOPASSWD: /startup.sh" > /etc/sudoers.d/oim && \
+    useradd -g 5000 -u 5000 oim -s /bin/bash -d /app && \    
     chown -R oim.oim /app && \
     mkdir /container-config/ && \
     chown -R oim.oim /container-config/ && \
